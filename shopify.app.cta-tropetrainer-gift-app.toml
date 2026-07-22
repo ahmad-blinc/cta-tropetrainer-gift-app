@@ -1,13 +1,16 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "d10925dc98c901632a7adcb51e87363c"
-name = "cta-tropetrainer-gift-app"
+client_id = "2bf48788464af0c8a988278a3ed337e5"
 application_url = "https://example.com"
 embedded = true
+name = "cta-tropetrainer-gift-app"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products"
+scopes = "read_orders,write_orders,read_products"
+
+[auth]
+redirect_urls = [ "https://example.com/api/auth" ]
 
 [webhooks]
 api_version = "2026-10"
@@ -20,8 +23,9 @@ api_version = "2026-10"
   uri = "/webhooks/app/scopes_update"
   topics = [ "app/scopes_update" ]
 
-[auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders/paid"
+  topics = [ "orders/paid" ]
 
 [build]
 include_config_on_deploy = true

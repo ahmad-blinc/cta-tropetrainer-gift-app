@@ -32,3 +32,18 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+model GiftCode {
+  id              String    @id @default(cuid())
+  shop            String
+  shopifyOrderId  String    @unique
+  shopifyOrderName String
+  idempotencyKey  String    @unique
+  status          String // pending | issued | failed
+  code            String?
+  accessCodeId    String?
+  requestId       String?
+  errorMessage    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}

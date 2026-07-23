@@ -43,6 +43,7 @@ model GiftCode {
   code            String?
   accessCodeId    String?
   requestId       String?
+  errorCode       String?
   errorMessage    String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

@@ -85,18 +85,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   await db.giftCode.upsert({
     where: { shopifyOrderId },
     create: { shop, shopifyOrderId, shopifyOrderName, idempotencyKey, status: "pending" },
-    update: { status: "pending", errorMessage: null },
+    update: { status: "pending", errorCode: null, errorMessage: null },
   });
 
   const result = await createAccessCode(idempotencyKey);
 
   if (!result.ok) {
     console.error(
-      `TropeTrainer access code creation failed for order ${shopifyOrderName}: ${result.error}`,
+      `TropeTrainer access code creation failed for order ${shopifyOrderName}: ` +
+        `[${result.errorCode ?? "unknown"}] ${result.message} (retryable=${result.retryable}, requestId=${result.requestId})`,
     );
     await db.giftCode.update({
       where: { shopifyOrderId },
-      data: { status: "failed", errorMessage: result.error },
+      data: {
+        status: "failed",
+        errorCode: result.errorCode,
+        errorMessage: result.message,
+        requestId: result.requestId,
+      },
     });
     await admin.graphql(
       `#graphql
@@ -117,6 +123,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       code: result.code,
       accessCodeId: result.accessCodeId,
       requestId: result.requestId,
+      errorCode: null,
       errorMessage: null,
     },
   });

@@ -28,6 +28,22 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    if (process.env.MOCK_FORCE_ERROR) {
+      const errorBody = {
+        error: {
+          type: "payment_error",
+          code: "payment_declined",
+          message: "The configured payment method was declined.",
+          retryable: false,
+          request_id: `req_${crypto.randomBytes(6).toString("hex")}`,
+          payment: { decline_code: "insufficient_funds" },
+        },
+      };
+      res.writeHead(402, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(errorBody));
+      return;
+    }
+
     const response = {
       id: `ac_${crypto.randomBytes(8).toString("hex")}`,
       key: req.headers["idempotency-key"] || "unknown",

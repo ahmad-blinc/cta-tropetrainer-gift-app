@@ -1,4 +1,5 @@
-const TROPETRAINER_API_URL = "https://www.tropetrainer.com/api/access-codes";
+const TROPETRAINER_API_URL =
+  process.env.TROPETRAINER_API_URL || "https://www.tropetrainer.com/api/access-codes";
 
 export type AccessCodeResult =
   | {

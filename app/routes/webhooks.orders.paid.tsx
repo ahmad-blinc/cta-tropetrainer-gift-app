@@ -1,15 +1,14 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
-import { createAccessCode } from "../tropetrainer.server";
-
-const GIFT_PRODUCT_TAG = "subscription_gift";
-const FAILED_TAG = "tropetrainer_code_failed";
-const CREATED_TAG = "tropetrainer_code_created";
-const METAFIELD_NAMESPACE = "custom";
-const METAFIELD_KEY = "tropetrainer_code";
-
-type AdminClient = NonNullable<Awaited<ReturnType<typeof authenticate.webhook>>["admin"]>;
+import {
+  addTag,
+  attemptIssueCode,
+  getOrderMetafieldCode,
+  GIFT_PRODUCT_TAG,
+  type AdminClient,
+} from "../gift-order.server";
+import { saveCertificateUrlMetafield } from "../certificate.server";
 
 type OrderPayload = {
   id: number;
@@ -46,30 +45,6 @@ async function isGiftSubscriptionOrder(
   return nodes.some((node) => node?.tags?.includes(GIFT_PRODUCT_TAG));
 }
 
-async function addTag(admin: AdminClient, orderGid: string, tag: string) {
-  await admin.graphql(
-    `#graphql
-    mutation AddOrderTag($id: ID!, $tags: [String!]!) {
-      tagsAdd(id: $id, tags: $tags) {
-        userErrors { message }
-      }
-    }`,
-    { variables: { id: orderGid, tags: [tag] } },
-  );
-}
-
-async function removeTag(admin: AdminClient, orderGid: string, tag: string) {
-  await admin.graphql(
-    `#graphql
-    mutation RemoveOrderTag($id: ID!, $tags: [String!]!) {
-      tagsRemove(id: $id, tags: $tags) {
-        userErrors { message }
-      }
-    }`,
-    { variables: { id: orderGid, tags: [tag] } },
-  );
-}
-
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { shop, topic, payload, admin } = await authenticate.webhook(request);
   const order = payload as OrderPayload;
@@ -94,24 +69,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // TropeTrainer call below goes. tagsAdd is idempotent, safe on webhook redelivery.
   await addTag(admin, orderGid, GIFT_PRODUCT_TAG);
 
+  // Save the signed certificate link as early as possible — before the
+  // TropeTrainer call — so it's ready well before Shopify's order-confirmation
+  // email sends. The certificate route generates the PDF on demand at click
+  // time, so the link doesn't need the code to exist yet, only the order to.
+  await saveCertificateUrlMetafield(admin, orderGid, shopifyOrderId);
+
   // Guard 1: Shopify metafield already has a code (e.g. a previous run succeeded
   // but our DB record is missing/stale) — sync our record and stop, no API call.
-  const metafieldResp = await admin.graphql(
-    `#graphql
-    query OrderMetafield($id: ID!, $namespace: String!, $key: String!) {
-      order(id: $id) {
-        metafield(namespace: $namespace, key: $key) {
-          value
-        }
-      }
-    }`,
-    {
-      variables: { id: orderGid, namespace: METAFIELD_NAMESPACE, key: METAFIELD_KEY },
-    },
-  );
-  const metafieldJson = await metafieldResp.json();
-  const existingCode: string | undefined = metafieldJson.data?.order?.metafield?.value;
-
+  const existingCode = await getOrderMetafieldCode(admin, orderGid);
   if (existingCode) {
     await db.giftCode.upsert({
       where: { shopifyOrderId },
@@ -134,80 +100,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return new Response();
   }
 
-  await db.giftCode.upsert({
-    where: { shopifyOrderId },
-    create: { shop, shopifyOrderId, shopifyOrderName, idempotencyKey, status: "pending" },
-    update: { status: "pending", errorCode: null, errorMessage: null },
+  const result = await attemptIssueCode({
+    admin,
+    shop,
+    orderGid,
+    shopifyOrderId,
+    shopifyOrderName,
+    idempotencyKey,
   });
 
-  const result = await createAccessCode(idempotencyKey);
-
-  if (!result.ok) {
-    console.error(
-      `TropeTrainer access code creation failed for order ${shopifyOrderName}: ` +
-        `[${result.errorCode ?? "unknown"}] ${result.message} (retryable=${result.retryable}, requestId=${result.requestId})`,
-    );
-    await db.giftCode.update({
-      where: { shopifyOrderId },
-      data: {
-        status: "failed",
-        errorCode: result.errorCode,
-        errorMessage: result.message,
-        requestId: result.requestId,
-      },
+  if (!result.ok && result.retryable) {
+    // Returning non-2xx makes Shopify redeliver this webhook later. Safe to
+    // retry: the idempotency key is stable per order, so TropeTrainer returns
+    // the original result instead of creating a duplicate code/charge.
+    return new Response("Retryable TropeTrainer error, requesting webhook redelivery", {
+      status: 500,
     });
-    await addTag(admin, orderGid, FAILED_TAG);
-
-    if (result.retryable) {
-      // Returning non-2xx makes Shopify redeliver this webhook later. Safe to
-      // retry: the idempotency key is stable per order, so TropeTrainer returns
-      // the original result instead of creating a duplicate code/charge.
-      return new Response("Retryable TropeTrainer error, requesting webhook redelivery", {
-        status: 500,
-      });
-    }
-    // Non-retryable (e.g. payment_declined) — retrying won't help until the
-    // underlying issue (billing, etc.) is fixed, so accept the webhook as-is.
-    return new Response();
   }
-
-  await db.giftCode.update({
-    where: { shopifyOrderId },
-    data: {
-      status: "issued",
-      code: result.code,
-      accessCodeId: result.accessCodeId,
-      requestId: result.requestId,
-      errorCode: null,
-      errorMessage: null,
-    },
-  });
-
-  await admin.graphql(
-    `#graphql
-    mutation SetTropeTrainerCode($metafields: [MetafieldsSetInput!]!) {
-      metafieldsSet(metafields: $metafields) {
-        userErrors { message }
-      }
-    }`,
-    {
-      variables: {
-        metafields: [
-          {
-            ownerId: orderGid,
-            namespace: METAFIELD_NAMESPACE,
-            key: METAFIELD_KEY,
-            type: "single_line_text_field",
-            value: result.code,
-          },
-        ],
-      },
-    },
-  );
-
-  await addTag(admin, orderGid, CREATED_TAG);
-  // Clean up a stale failed-tag if this succeeded on a retry after an earlier failure.
-  await removeTag(admin, orderGid, FAILED_TAG);
 
   return new Response();
 };

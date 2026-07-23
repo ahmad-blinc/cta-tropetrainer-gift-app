@@ -1,5 +1,13 @@
-const TROPETRAINER_API_URL =
-  process.env.TROPETRAINER_API_URL || "https://www.tropetrainer.com/api/access-codes";
+const DEFAULT_TROPETRAINER_API_URL = "https://www.tropetrainer.com/api/access-codes";
+const TROPETRAINER_API_URL = process.env.TROPETRAINER_API_URL || DEFAULT_TROPETRAINER_API_URL;
+
+export function getTropeTrainerConnectionStatus() {
+  return {
+    apiKeyConfigured: Boolean(process.env.TROPETRAINER_API_KEY),
+    apiUrl: TROPETRAINER_API_URL,
+    isDefaultUrl: TROPETRAINER_API_URL === DEFAULT_TROPETRAINER_API_URL,
+  };
+}
 
 export type AccessCodeResult =
   | {

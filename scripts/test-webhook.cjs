@@ -45,10 +45,6 @@ async function main() {
         {
           variant_id: VARIANT_ID,
           quantity: 1,
-          properties: [
-            { name: "Recipient name", value: "Test Recipient" },
-            { name: "Gift giver name", value: "Test Giver" },
-          ],
         },
       ],
       financial_status: "pending",

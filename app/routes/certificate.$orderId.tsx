@@ -1,6 +1,4 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { isRouteErrorResponse, useRouteError } from "@remix-run/react";
 import db from "../db.server";
 import {
   generateCertificatePdf,
@@ -27,8 +25,61 @@ const FIXED_COPY = {
   },
 };
 
-function fixedError(reason: keyof typeof FIXED_COPY, status: number) {
-  return json({ ...FIXED_COPY[reason] }, { status });
+// Escape user/CMS-controlled strings before interpolating into hand-built HTML below.
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderStatusPage(opts: {
+  heading: string;
+  body: string;
+  firstName?: string | null;
+  contactHref?: string | null;
+  delayed?: boolean;
+}) {
+  const { heading, body, firstName, contactHref, delayed } = opts;
+  const greeting = firstName
+    ? `<p style="font-size:15px;color:#6b7889;margin:0 0 4px">Hi ${escapeHtml(firstName)},</p>`
+    : "";
+  const contactBlock =
+    contactHref && delayed
+      ? `<a href="${escapeHtml(contactHref)}" style="display:inline-block;margin-top:24px;padding:10px 22px;background:#16283f;color:#ffffff;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">Contact us</a>`
+      : contactHref && !delayed
+        ? `<p style="font-size:13px;color:#8592a1;margin:18px 0 0">Still don't see it? <a href="${escapeHtml(contactHref)}" style="color:#2c6ecb;text-decoration:underline">You can contact us</a>.</p>`
+        : "";
+
+  return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>${escapeHtml(heading)}</title>
+  </head>
+  <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4f4f4;font-family:Arial,Helvetica,sans-serif;padding:24px">
+    <div style="max-width:460px;width:100%;background:#ffffff;border-radius:12px;padding:40px 36px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,0.08)">
+      ${greeting}
+      <h1 style="font-size:22px;margin:0 0 12px;color:#16283f">${escapeHtml(heading)}</h1>
+      <p style="font-size:15px;line-height:1.6;color:#4a5b70;margin:0">${escapeHtml(body)}</p>
+      ${contactBlock}
+    </div>
+  </body>
+</html>`;
+}
+
+function statusResponse(
+  reason: keyof typeof FIXED_COPY,
+  status: number,
+  extra?: { firstName?: string | null; contactHref?: string | null; delayed?: boolean },
+) {
+  return new Response(renderStatusPage({ ...FIXED_COPY[reason], ...extra }), {
+    status,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
 }
 
 // Public route — opened directly by customers from an email, not through the
@@ -41,10 +92,16 @@ function fixedError(reason: keyof typeof FIXED_COPY, status: number) {
 //    at email-render time ({{ order.id }}), so it's what the order
 //    confirmation email snippet uses — no dependency on our webhook having
 //    run yet, which is what made the metafield-based link unreliable there.
+//
+// This route deliberately has no default export and no ErrorBoundary —
+// Remix only serves a loader's raw Response (needed for the PDF bytes below)
+// when the route module has neither, otherwise every response gets wrapped
+// in the full HTML document shell. So every non-PDF outcome here returns a
+// hand-built HTML Response directly instead of throwing.
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const orderId = params.orderId;
   if (!orderId) {
-    throw fixedError("invalid", 400);
+    return statusResponse("invalid", 400);
   }
 
   const url = new URL(request.url);
@@ -56,7 +113,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const shopKeyValid = Boolean(shopParam && key && isValidShopCertificateKey(shopParam, key));
 
   if (!tokenValid && !shopKeyValid) {
-    throw fixedError("invalid", 403);
+    return statusResponse("invalid", 403);
   }
 
   const record = await db.giftCode.findUnique({ where: { shopifyOrderId: orderId } });
@@ -65,7 +122,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   // but not that shopParam is actually this order's shop — check that too,
   // so a valid key for shop A can't be paired with an order id from shop B.
   if (record && shopKeyValid && !tokenValid && record.shop !== shopParam) {
-    throw fixedError("invalid", 403);
+    return statusResponse("invalid", 403);
   }
 
   // Under the shop-key scheme, a missing/not-yet-issued record is expected
@@ -83,8 +140,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     const ageMs = record ? Date.now() - record.createdAt.getTime() : 0;
     const delayed = ageMs > DELAY_ESCALATION_MS;
 
-    throw json(
-      {
+    return new Response(
+      renderStatusPage({
         heading: delayed
           ? (messages?.delayedHeading ?? "Your certificate is taking longer than expected")
           : (messages?.processingHeading ?? "Your certificate is being processed"),
@@ -99,14 +156,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
           messages?.contactLink && shouldShowContactLink(messages.contactLinkVisibility, delayed)
             ? resolveContactHref(messages.contactLink)
             : null,
-      },
-      { status: 202 },
+      }),
+      { status: 202, headers: { "Content-Type": "text/html; charset=utf-8" } },
     );
   }
 
   const pdf = await generateCertificatePdf(record.shop, orderId);
   if (!pdf) {
-    throw fixedError("error", 500);
+    return statusResponse("error", 500);
   }
 
   return new Response(new Uint8Array(pdf), {
@@ -117,73 +174,3 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     },
   });
 };
-
-export function ErrorBoundary() {
-  const error = useRouteError();
-  const data = isRouteErrorResponse(error) ? error.data : null;
-  const heading = data?.heading ?? "Something went wrong";
-  const body =
-    data?.body ?? "Please try again in a few minutes, or contact us if this keeps happening.";
-  const firstName: string | null = data?.firstName ?? null;
-  const contactHref: string | null = data?.contactHref ?? null;
-  const delayed: boolean = data?.delayed ?? false;
-
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#f4f4f4",
-        fontFamily: "Arial, Helvetica, sans-serif",
-        padding: "24px",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "460px",
-          width: "100%",
-          background: "#ffffff",
-          borderRadius: "12px",
-          padding: "40px 36px",
-          textAlign: "center",
-          boxShadow: "0 1px 6px rgba(0, 0, 0, 0.08)",
-        }}
-      >
-        {firstName && (
-          <p style={{ fontSize: "15px", color: "#6b7889", margin: "0 0 4px" }}>Hi {firstName},</p>
-        )}
-        <h1 style={{ fontSize: "22px", margin: "0 0 12px", color: "#16283f" }}>{heading}</h1>
-        <p style={{ fontSize: "15px", lineHeight: 1.6, color: "#4a5b70", margin: 0 }}>{body}</p>
-        {contactHref && delayed && (
-          <a
-            href={contactHref}
-            style={{
-              display: "inline-block",
-              marginTop: "24px",
-              padding: "10px 22px",
-              background: "#16283f",
-              color: "#ffffff",
-              borderRadius: "8px",
-              textDecoration: "none",
-              fontSize: "14px",
-              fontWeight: 600,
-            }}
-          >
-            Contact us
-          </a>
-        )}
-        {contactHref && !delayed && (
-          <p style={{ fontSize: "13px", color: "#8592a1", margin: "18px 0 0" }}>
-            Still don't see it?{" "}
-            <a href={contactHref} style={{ color: "#2c6ecb", textDecoration: "underline" }}>
-              You can contact us
-            </a>
-            .
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}

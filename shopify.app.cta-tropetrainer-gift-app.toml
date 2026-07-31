@@ -28,5 +28,4 @@ api_version = "2026-10"
   topics = [ "orders/paid" ]
 
 [build]
-include_config_on_deploy = true
 automatically_update_urls_on_dev = true

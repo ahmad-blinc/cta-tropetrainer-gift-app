@@ -3,7 +3,7 @@
 client_id = "2bf48788464af0c8a988278a3ed337e5"
 application_url = "https://example.com"
 embedded = true
-name = "cta-tropetrainer-gift-app"
+name = "TropeTrainer Gift Subscription"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes

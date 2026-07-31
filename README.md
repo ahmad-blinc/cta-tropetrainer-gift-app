@@ -49,7 +49,7 @@ The app is hosted on Railway, not Vercel/Heroku — the Shopify Remix template n
 
 1. Push to `main` — Railway is connected via the GitHub App and auto-deploys.
 2. Config changes in `shopify.app.cta-tropetrainer-gift-app.toml` (scopes, webhooks, app URL, name) need a **separate** manual step — `npm run deploy` (runs `shopify app deploy`) — pushing to GitHub does **not** update the Partner Dashboard.
-3. `npm run setup` (runs on every container boot via `docker-start`) does `prisma generate && prisma db push --accept-data-loss`. This directly syncs the schema to Postgres rather than using versioned migration files — fine pre-launch with no real data, but **should be replaced with proper `prisma migrate` history before real customer data accumulates**, since `db push` can silently drop columns/tables on a schema change.
+3. `npm run setup` (runs on every container boot via `docker-start`) does `prisma generate && prisma migrate deploy`, applying any new files in `prisma/migrations/`. To change the schema going forward: edit `prisma/schema.prisma`, then run `prisma migrate dev --name <description>` against a real Postgres connection (e.g. Railway's `DATABASE_PUBLIC_URL`) to generate the migration file, and commit it — don't hand-edit migration SQL or use `db push` against production.
 
 <details>
 <summary><strong>Known infrastructure gotchas</strong> (already fixed — click to expand for why)</summary>

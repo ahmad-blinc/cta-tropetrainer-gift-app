@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "2bf48788464af0c8a988278a3ed337e5"
-application_url = "https://example.com"
+application_url = "https://cta-tropetrainer-gift-app-production.up.railway.app"
 embedded = true
 name = "TropeTrainer Gift Subscription"
 
@@ -10,7 +10,7 @@ name = "TropeTrainer Gift Subscription"
 scopes = "read_orders,write_orders,read_products,write_files"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://cta-tropetrainer-gift-app-production.up.railway.app/api/auth" ]
 
 [webhooks]
 api_version = "2026-10"

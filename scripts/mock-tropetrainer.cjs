@@ -1,7 +1,7 @@
 const http = require("http");
 const crypto = require("crypto");
 
-const PORT = 4001;
+const PORT = process.env.PORT || 4001;
 
 function randomCode() {
   const part = () => crypto.randomBytes(2).toString("hex").toUpperCase();

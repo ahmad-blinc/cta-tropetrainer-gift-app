@@ -2,6 +2,8 @@
 
 Shopify custom app for **Chant Torah America** (store: `chant-torah-america.myshopify.com`). When a customer buys the "One Year Subscription Gift" product, the app calls the TropeTrainer API to issue an activation code, then serves a branded PDF certificate at a public link included in the order confirmation email.
 
+**Contents:** [What it does](#what-it-does) · [Stack](#stack) · [Environment variables](#required-environment-variables) · [Local dev](#local-development) · [Deploying](#deploying-railway) · [Testing without the real key](#testing-without-the-real-tropetrainer-key) · [Repo layout](#repo-layout)
+
 ## What it does
 
 1. Customer buys the gift subscription product on the storefront (custom line-item properties capture student info, purchaser/clergy info, and an attestation checkbox — see the theme's `snippets/buy-buttons.liquid`, not part of this repo).
@@ -49,12 +51,15 @@ The app is hosted on Railway, not Vercel/Heroku — the Shopify Remix template n
 2. Config changes in `shopify.app.cta-tropetrainer-gift-app.toml` (scopes, webhooks, app URL, name) need a **separate** manual step — `npm run deploy` (runs `shopify app deploy`) — pushing to GitHub does **not** update the Partner Dashboard.
 3. `npm run setup` (runs on every container boot via `docker-start`) does `prisma generate && prisma db push --accept-data-loss`. This directly syncs the schema to Postgres rather than using versioned migration files — fine pre-launch with no real data, but **should be replaced with proper `prisma migrate` history before real customer data accumulates**, since `db push` can silently drop columns/tables on a schema change.
 
-### Known infrastructure gotchas (already fixed, but good to know why)
+<details>
+<summary><strong>Known infrastructure gotchas</strong> (already fixed — click to expand for why)</summary>
 
 - **Dockerfile must use `node:20-alpine`, not `node:18`.** `@shopify/shopify-app-remix`'s webhook HMAC validation needs the global Web Crypto API, unavailable on Node 18. `package.json`'s `engines` field reflects the real requirement.
 - **Puppeteer needs Alpine's own `chromium` package.** Puppeteer's bundled Chromium download is built for glibc and doesn't run on Alpine (musl). The Dockerfile installs `chromium` via `apk` and points Puppeteer at it via `PUPPETEER_EXECUTABLE_PATH`.
 - **`certificate.$orderId.tsx` must never export a default component or an `ErrorBoundary`.** Remix only serves a loader's raw `Response` (needed to return PDF bytes directly) when the route module has neither — otherwise every response, including successful ones, gets wrapped in the full HTML document shell. Non-PDF states (invalid link, still processing, error) are returned as hand-built HTML `Response`s from the loader instead of thrown errors.
 - **`package-lock.json` must be committed** (it's intentionally *not* gitignored, despite what a default Node `.gitignore` might suggest) — `npm ci` in the Dockerfile fails without it.
+
+</details>
 
 ## Testing without the real TropeTrainer key
 

@@ -22,9 +22,10 @@ export default function App() {
   return (
     <div className={styles.index}>
       <div className={styles.content}>
-        <h1 className={styles.heading}>A short heading about [your app]</h1>
+        <h1 className={styles.heading}>TropeTrainer Gift Subscription</h1>
         <p className={styles.text}>
-          A tagline about [your app] that describes your value proposition.
+          Issues TropeTrainer activation codes and gift certificates for Chant Torah America's
+          One-Year Subscription Gift product.
         </p>
         {showForm && (
           <Form className={styles.form} method="post" action="/auth/login">
@@ -40,16 +41,16 @@ export default function App() {
         )}
         <ul className={styles.list}>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Automatic code issuance</strong>. Calls the TropeTrainer API when a gift
+            subscription order is placed and tracks the result.
           </li>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Branded certificates</strong>. Generates a PDF gift certificate, linked
+            directly from the order confirmation email.
           </li>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Admin visibility</strong>. See issued, pending, and failed codes, and
+            configure certificate branding, from one settings page.
           </li>
         </ul>
       </div>

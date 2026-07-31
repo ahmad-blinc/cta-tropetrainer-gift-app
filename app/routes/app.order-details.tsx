@@ -14,6 +14,7 @@ export type OrderDetails = {
   shippingAddress: string | null;
   tags: string[];
   lineItems: { title: string; quantity: number; price: string }[];
+  certificateUrl: string | null;
 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -34,6 +35,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         email
         displayFinancialStatus
         displayFulfillmentStatus
+        certificateUrl: metafield(namespace: "custom", key: "certificate_url") { value }
         totalPriceSet { shopMoney { amount currencyCode } }
         shippingAddress {
           name
@@ -88,6 +90,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     currency: order.totalPriceSet.shopMoney.currencyCode,
     shippingAddress,
     tags: order.tags ?? [],
+    certificateUrl: order.certificateUrl?.value ?? null,
     lineItems: order.lineItems.edges.map(
       (e: {
         node: {

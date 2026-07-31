@@ -48,3 +48,41 @@ model GiftCode {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
+
+model CertificateTemplate {
+  id        String   @id @default(cuid())
+  shop      String   @unique
+  html      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CertificateAsset {
+  id        String   @id @default(cuid())
+  shop      String
+  key       String // "seal" | "tropetrainerLogo" | "cantorsLogo"
+  url       String
+  updatedAt DateTime @updatedAt
+
+  @@unique([shop, key])
+}
+
+model CertificateEmailSettings {
+  id          String   @id @default(cuid())
+  shop        String   @unique
+  headingText String?
+  linkText    String
+  updatedAt   DateTime @updatedAt
+}
+
+model CertificateStatusMessages {
+  id                    String   @id @default(cuid())
+  shop                  String   @unique
+  processingHeading     String
+  processingBody        String
+  delayedHeading        String
+  delayedBody           String
+  contactLink           String?
+  contactLinkVisibility String   @default("delayed") // "processing" | "delayed" | "both"
+  updatedAt             DateTime @updatedAt
+}

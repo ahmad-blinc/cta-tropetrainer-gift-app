@@ -23,6 +23,7 @@ import {
   Modal,
   SkeletonBodyText,
   Divider,
+  Link,
 } from "@shopify/polaris";
 import { ClipboardIcon } from "@shopify/polaris-icons";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
@@ -191,6 +192,13 @@ function OrderDetailsModal({
   const order = fetcher.data?.order;
   const loading = fetcher.state !== "idle" && !fetcher.data;
 
+  const secondaryActions = order?.certificateUrl
+    ? [
+        { content: "Close", onAction: onClose },
+        { content: "View certificate PDF", url: order.certificateUrl, target: "_blank" as const },
+      ]
+    : [{ content: "Close", onAction: onClose }];
+
   return (
     <Modal
       open
@@ -200,7 +208,7 @@ function OrderDetailsModal({
         content: "View in Shopify admin",
         url: `shopify:admin/orders/${orderId}`,
       }}
-      secondaryActions={[{ content: "Close", onAction: onClose }]}
+      secondaryActions={secondaryActions}
     >
       <Modal.Section>
         {loading ? (
@@ -215,9 +223,14 @@ function OrderDetailsModal({
                 {order.customerName ?? "—"}
               </Text>
               {order.customerEmail && (
-                <Text as="span" variant="bodySm" tone="subdued">
-                  {order.customerEmail}
-                </Text>
+                <Link
+                  url={`shopify:admin/customers?query=${encodeURIComponent(order.customerEmail)}`}
+                  removeUnderline
+                >
+                  <Text as="span" variant="bodySm">
+                    {order.customerEmail}
+                  </Text>
+                </Link>
               )}
             </BlockStack>
 

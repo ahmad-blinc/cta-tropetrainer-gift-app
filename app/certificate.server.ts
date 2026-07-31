@@ -1,9 +1,11 @@
 import crypto from "crypto";
+import Mustache from "mustache";
 import puppeteer from "puppeteer";
 import { unauthenticated } from "./shopify.server";
+import db from "./db.server";
 import type { AdminClient } from "./gift-order.server";
+import { getCertificateAssetUrls, getDefaultAssetUrl } from "./certificate-assets.server";
 
-const ACCENT = "#b6862c";
 export const CERTIFICATE_METAFIELD_NAMESPACE = "custom";
 export const CERTIFICATE_METAFIELD_KEY = "certificate_url";
 
@@ -27,6 +29,45 @@ export function buildCertificateUrl(orderId: string): string {
   const base = (process.env.SHOPIFY_APP_URL || "").replace(/\/$/, "");
   const token = signOrderId(orderId);
   return `${base}/certificate/${orderId}?token=${token}`;
+}
+
+// A per-shop (not per-order) key, deterministic from the shop domain — no DB
+// write needed, so it's usable directly inside Shopify's notification Liquid
+// as a literal value baked into the snippet at generation time. This is what
+// lets the certificate link in the order confirmation email be built entirely
+// from {{ order.id }} (which Liquid already has instantly, no webhook
+// involved) instead of a metafield our webhook writes asynchronously —
+// eliminating the race between our webhook and Shopify's near-instant email
+// send. Same tradeoff Order Printer Pro uses: knowing this key plus any order
+// id for the shop is enough to view that order's certificate, so it's weaker
+// than the per-order signed token above, which stays in use for the
+// certificate_url metafield / the app's own "View certificate PDF" button.
+export function getShopCertificateKey(shop: string): string {
+  return crypto.createHmac("sha256", getSigningSecret()).update(shop).digest("hex").slice(0, 32);
+}
+
+export function isValidShopCertificateKey(shop: string, key: string): boolean {
+  const expected = getShopCertificateKey(shop);
+  const expectedBuf = Buffer.from(expected);
+  const keyBuf = Buffer.from(key);
+  if (expectedBuf.length !== keyBuf.length) return false;
+  return crypto.timingSafeEqual(expectedBuf, keyBuf);
+}
+
+// Pieces needed to build the Liquid-embedded instant certificate link — kept
+// separate (rather than a finished URL) since the order id segment has to
+// stay literal Liquid syntax ({{ order.id }}) for Shopify to fill in at
+// email-render time, not a real value we can compute ahead of time.
+export function getInstantCertificateLinkParts(shop: string): {
+  appUrl: string;
+  shop: string;
+  key: string;
+} {
+  return {
+    appUrl: (process.env.SHOPIFY_APP_URL || "").replace(/\/$/, ""),
+    shop,
+    key: getShopCertificateKey(shop),
+  };
 }
 
 // Saves the (already-signed) certificate link to an order metafield as soon as
@@ -72,14 +113,101 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
-type CertificateData = {
+export type CertificateData = {
   recipientName: string;
   giverName: string;
   activationCode: string;
   shopName: string;
   shopLogoUrl: string | null;
   formattedDate: string;
+  initial: string;
+  sealImageUrl: string;
+  tropetrainerLogoUrl: string;
+  cantorsLogoUrl: string;
 };
+
+export const SAMPLE_CERTIFICATE_DATA: CertificateData = {
+  recipientName: "Jordan Rivera",
+  giverName: "The Cohen Family",
+  activationCode: "7K3M-R9PD-X2QH",
+  shopName: "Chant Torah America",
+  shopLogoUrl: null,
+  formattedDate: "January 1, 2026",
+  initial: "C",
+  sealImageUrl: getDefaultAssetUrl("seal"),
+  tropetrainerLogoUrl: getDefaultAssetUrl("tropetrainerLogo"),
+  cantorsLogoUrl: getDefaultAssetUrl("cantorsLogo"),
+};
+
+export const CERTIFICATE_VARIABLES: { key: keyof CertificateData; description: string }[] = [
+  { key: "recipientName", description: "The gift recipient's name" },
+  { key: "activationCode", description: "The TropeTrainer activation code" },
+  { key: "sealImageUrl", description: "The Chant Torah America seal image (set under Brand assets)" },
+  { key: "tropetrainerLogoUrl", description: "The TropeTrainer logo image (set under Brand assets)" },
+  { key: "cantorsLogoUrl", description: "The Cantors Assembly partnership badge image (set under Brand assets)" },
+  { key: "giverName", description: "The gift giver's name" },
+  { key: "shopName", description: "The store's name" },
+  { key: "shopLogoUrl", description: "The store's logo URL, if one is set (use with #shopLogoUrl / ^shopLogoUrl sections)" },
+  { key: "formattedDate", description: "The order date, formatted (e.g. January 1, 2026)" },
+  { key: "initial", description: "The store name's first letter, uppercased" },
+];
+
+export async function getCertificateTemplate(shop: string): Promise<string> {
+  const record = await db.certificateTemplate.findUnique({ where: { shop } });
+  return record?.html ?? DEFAULT_CERTIFICATE_TEMPLATE;
+}
+
+export async function saveCertificateTemplate(shop: string, html: string): Promise<void> {
+  await db.certificateTemplate.upsert({
+    where: { shop },
+    create: { shop, html },
+    update: { html },
+  });
+}
+
+export async function resetCertificateTemplate(shop: string): Promise<void> {
+  await db.certificateTemplate.deleteMany({ where: { shop } });
+}
+
+export function renderCertificateHtml(template: string, data: CertificateData): string {
+  return Mustache.render(template, data);
+}
+
+// Used to personalize the "certificate not ready yet" waiting page with a
+// first name. This link is opened from the order confirmation email, which
+// Shopify sends to whoever completed checkout — the gift *giver* — not the
+// recipient, so it greets them by the giver's name, not the recipient's.
+// Best-effort only — the waiting page must never break because of this, so
+// any failure just means no greeting is shown.
+export async function getGiverFirstName(
+  shop: string,
+  shopifyOrderId: string,
+): Promise<string | null> {
+  try {
+    const { admin } = await unauthenticated.admin(shop);
+    const resp = await admin.graphql(
+      `#graphql
+      query CertificateGiverName($id: ID!) {
+        order(id: $id) {
+          lineItems(first: 10) {
+            edges { node { customAttributes { key value } } }
+          }
+        }
+      }`,
+      { variables: { id: `gid://shopify/Order/${shopifyOrderId}` } },
+    );
+    const respJson = await resp.json();
+    const attrs: { key: string; value: string }[] =
+      respJson.data?.order?.lineItems?.edges?.flatMap(
+        (e: { node: { customAttributes: { key: string; value: string }[] } }) =>
+          e.node.customAttributes,
+      ) ?? [];
+    const giverName = attrs.find((a) => a.key.toLowerCase() === "gift giver name")?.value;
+    return giverName?.trim().split(/\s+/)[0] || null;
+  } catch {
+    return null;
+  }
+}
 
 export async function generateCertificatePdf(
   shop: string,
@@ -143,14 +271,23 @@ export async function generateCertificatePdf(
     year: "numeric",
   });
 
-  const html = renderCertificateHtml({
-    recipientName: escapeHtml(recipientName),
-    giverName: escapeHtml(giverName),
-    activationCode: escapeHtml(activationCode),
+  const assetUrls = await getCertificateAssetUrls(shop);
+
+  const data: CertificateData = {
+    recipientName: escapeHtml(recipientName) || "Recipient Name",
+    giverName: escapeHtml(giverName) || "Gift Giver",
+    activationCode: escapeHtml(activationCode) || "TT-XXXX-XXXX",
     shopName: escapeHtml(shopName),
     shopLogoUrl,
     formattedDate,
-  });
+    initial: shopName.slice(0, 1).toUpperCase(),
+    sealImageUrl: assetUrls.seal,
+    tropetrainerLogoUrl: assetUrls.tropetrainerLogo,
+    cantorsLogoUrl: assetUrls.cantorsLogo,
+  };
+
+  const template = await getCertificateTemplate(shop);
+  const html = renderCertificateHtml(template, data);
 
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
   try {
@@ -166,398 +303,132 @@ export async function generateCertificatePdf(
   }
 }
 
-function renderCertificateHtml(data: CertificateData): string {
-  const { recipientName, giverName, activationCode, shopName, shopLogoUrl, formattedDate } = data;
-  const initial = shopName.slice(0, 1).toUpperCase();
-
-  return `<!doctype html>
+// Matches Chant Torah America's official certificate design (client-provided
+// PDF): plain white Letter page, seal + arched banner, recipient name on a
+// fillable line, blank "scheduled dates" lines (intentionally left blank —
+// filled in by hand, not part of the order data), an activation code box,
+// and the TropeTrainer / Cantors Assembly logos anchored at the bottom.
+export const DEFAULT_CERTIFICATE_TEMPLATE = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=Cormorant+Garamond:ital,wght@0,500;1,500&display=swap');
-
   * { box-sizing: border-box; }
   body { margin: 0; }
 
-  .ttgc-certificate {
+  .cta-certificate {
     width: 100%;
-    min-height: 940px;
-    padding: 22px;
-    background: #f4efe3;
-    color: #16283f;
-    font-family: "Helvetica Neue", Arial, sans-serif;
-  }
-
-  .ttgc-frame {
-    position: relative;
-    min-height: 896px;
-    background: #fffdf9;
-    border: 2px solid #16283f;
-    padding: 6px;
-    overflow: hidden;
-  }
-
-  .ttgc-frame:before {
-    content: "";
-    position: absolute;
-    inset: 6px;
-    border: 1px solid ${ACCENT};
-    z-index: 2;
-    pointer-events: none;
-  }
-
-  .ttgc-frame:after {
-    content: "";
-    position: absolute;
-    inset: 12px;
-    border: 1px solid rgba(22, 40, 63, 0.25);
-    z-index: 2;
-    pointer-events: none;
-  }
-
-  .ttgc-corner {
-    position: absolute;
-    width: 34px;
-    height: 34px;
-    border-color: ${ACCENT};
-    z-index: 2;
-  }
-
-  .ttgc-corner-tl { top: 18px; left: 18px; border-top: 2px solid; border-left: 2px solid; }
-  .ttgc-corner-tr { top: 18px; right: 18px; border-top: 2px solid; border-right: 2px solid; }
-  .ttgc-corner-bl { bottom: 18px; left: 18px; border-bottom: 2px solid; border-left: 2px solid; }
-  .ttgc-corner-br { bottom: 18px; right: 18px; border-bottom: 2px solid; border-right: 2px solid; }
-
-  .ttgc-watermark {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-family: "Playfair Display", Georgia, serif;
-    font-weight: 800;
-    font-size: 420px;
-    line-height: 1;
-    color: #16283f;
-    opacity: 0.045;
-    z-index: 1;
-    pointer-events: none;
-    user-select: none;
-  }
-
-  .ttgc-body {
-    position: relative;
-    z-index: 3;
-    min-height: 824px;
+    min-height: 1056px;
+    padding: 70px 80px 50px;
+    background: #ffffff;
+    color: #1a1a1a;
+    font-family: Arial, Helvetica, sans-serif;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 48px 64px 32px;
+  }
+
+  .cta-seal {
+    width: 100%;
+    max-width: 460px;
+    height: auto;
+    display: block;
+  }
+
+  .cta-intro {
+    margin-top: 30px;
     text-align: center;
+    font-size: 17px;
+    line-height: 1.55;
   }
 
-  .ttgc-brand {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+  .cta-recipient-line {
+    margin-top: 32px;
+    width: 100%;
+    max-width: 600px;
+    border-bottom: 1.5px solid #1a1a1a;
+    padding-bottom: 8px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: 600;
+    min-height: 32px;
   }
 
-  .ttgc-logo {
-    max-width: 170px;
-    max-height: 60px;
-    object-fit: contain;
+  .cta-section-label {
+    margin-top: 34px;
+    text-align: center;
+    font-size: 15px;
   }
 
-  .ttgc-brand-name {
-    font-family: "Playfair Display", Georgia, serif;
+  .cta-dates-grid {
+    margin-top: 20px;
+    width: 100%;
+    max-width: 560px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 26px 44px;
+  }
+
+  .cta-dates-grid div {
+    border-bottom: 1px solid #1a1a1a;
+    height: 4px;
+  }
+
+  .cta-code-box {
+    margin-top: 16px;
+    border: 1px solid #8b8b8b;
+    padding: 14px 30px;
+    min-width: 260px;
+    text-align: center;
     font-size: 20px;
     font-weight: 700;
-    color: #16283f;
-    letter-spacing: 0.5px;
+    letter-spacing: 1px;
   }
 
-  .ttgc-brand-rule {
-    width: 60px;
-    height: 2px;
-    background: ${ACCENT};
-    margin-top: 14px;
-  }
-
-  .ttgc-heading-block { margin-top: 34px; }
-
-  .ttgc-kicker {
-    color: ${ACCENT};
-    text-transform: uppercase;
-    letter-spacing: 3px;
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-  .ttgc-title {
-    margin-top: 18px;
-    font-family: "Playfair Display", Georgia, serif;
-    font-size: 66px;
-    line-height: 1.05;
-    font-weight: 800;
-    color: #16283f;
-  }
-
-  .ttgc-subtitle {
-    margin-top: 14px;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    font-size: 15px;
-    color: #4a5b70;
-  }
-
-  .ttgc-divider {
-    margin-top: 32px;
-    display: flex;
-    align-items: center;
-    width: 360px;
-  }
-
-  .ttgc-divider-line { flex: 1; height: 1px; background: ${ACCENT}; }
-
-  .ttgc-divider-mark {
-    width: 8px;
-    height: 8px;
-    margin: 0 10px;
-    background: ${ACCENT};
-    transform: rotate(45deg);
-    flex-shrink: 0;
-  }
-
-  .ttgc-recipient-block { margin-top: 36px; }
-
-  .ttgc-presented-label {
-    text-transform: uppercase;
-    letter-spacing: 2.4px;
-    font-size: 12px;
-    font-weight: 700;
-    color: #6b7889;
-  }
-
-  .ttgc-recipient-name {
-    display: inline-block;
-    min-width: 520px;
-    max-width: 700px;
-    margin-top: 16px;
-    padding-bottom: 12px;
-    border-bottom: 2px solid ${ACCENT};
-    font-family: "Cormorant Garamond", Georgia, serif;
-    font-style: italic;
-    font-weight: 500;
-    font-size: 58px;
-    line-height: 1.15;
-    color: #16283f;
-  }
-
-  .ttgc-giver-line {
-    margin-top: 22px;
-    font-size: 16px;
-    font-style: italic;
-    color: #4a5b70;
-  }
-
-  .ttgc-giver-line strong { font-style: normal; color: #16283f; }
-
-  .ttgc-code-card {
-    margin-top: 36px;
-    width: 380px;
-    max-width: 100%;
-    padding: 20px 28px;
-    background: #16283f;
-    border-top: 3px solid ${ACCENT};
-    border-bottom: 3px solid ${ACCENT};
-  }
-
-  .ttgc-code-label {
-    color: #ffffff;
-    text-transform: uppercase;
-    letter-spacing: 2.2px;
-    font-size: 11px;
-    font-weight: 700;
-  }
-
-  .ttgc-code-value {
-    margin-top: 10px;
-    color: #ffffff;
-    font-family: "Courier New", monospace;
-    font-size: 28px;
-    font-weight: 700;
-    letter-spacing: 2.5px;
-  }
-
-  .ttgc-instructions {
-    margin-top: 22px;
-    max-width: 520px;
-    font-size: 13px;
-    line-height: 1.6;
-    color: #4a5b70;
-  }
-
-  .ttgc-footer {
+  .cta-footer-logos {
     margin-top: auto;
-    padding-top: 30px;
+    padding-top: 50px;
     width: 100%;
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
-    text-align: left;
   }
 
-  .ttgc-footer-left { display: flex; flex-direction: column; gap: 8px; }
-  .ttgc-footer-row { display: flex; align-items: baseline; gap: 8px; }
-
-  .ttgc-footer-label {
-    text-transform: uppercase;
-    letter-spacing: 1.6px;
-    font-size: 10px;
-    font-weight: 700;
-    color: #8592a1;
-  }
-
-  .ttgc-footer-value { font-size: 13px; color: #16283f; }
-
-  .ttgc-seal { display: flex; flex-direction: column; align-items: center; }
-
-  .ttgc-seal-wrap {
-    position: relative;
-    width: 70px;
-    height: 70px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .ttgc-seal-ring {
-    position: relative;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    border: 2px solid ${ACCENT};
-    background: #fffdf9;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .ttgc-seal-ring:before {
-    content: "";
-    position: absolute;
-    inset: 4px;
-    border: 1px solid #16283f;
-    border-radius: 50%;
-  }
-
-  .ttgc-seal-tick {
-    position: absolute;
-    width: 5px;
-    height: 5px;
-    background: ${ACCENT};
-    transform: rotate(45deg);
-  }
-
-  .ttgc-seal-tick-top { top: -2px; left: 50%; margin-left: -2.5px; }
-  .ttgc-seal-tick-bottom { bottom: -2px; left: 50%; margin-left: -2.5px; }
-  .ttgc-seal-tick-left { left: -2px; top: 50%; margin-top: -2.5px; }
-  .ttgc-seal-tick-right { right: -2px; top: 50%; margin-top: -2.5px; }
-
-  .ttgc-seal-letter {
-    font-family: "Playfair Display", Georgia, serif;
-    font-size: 22px;
-    font-weight: 700;
-    color: #16283f;
-  }
-
-  .ttgc-seal-caption {
-    margin-top: 6px;
-    text-transform: uppercase;
-    letter-spacing: 1.4px;
-    font-size: 9px;
-    color: #8592a1;
+  .cta-footer-logos img {
+    height: 44px;
+    width: auto;
+    max-width: 220px;
+    object-fit: contain;
   }
 </style>
 </head>
 <body>
-  <div class="ttgc-certificate">
-    <div class="ttgc-frame">
-      <div class="ttgc-corner ttgc-corner-tl"></div>
-      <div class="ttgc-corner ttgc-corner-tr"></div>
-      <div class="ttgc-corner ttgc-corner-bl"></div>
-      <div class="ttgc-corner ttgc-corner-br"></div>
+  <div class="cta-certificate">
+    <img class="cta-seal" src="{{sealImageUrl}}" alt="Chant Torah America" />
 
-      <div class="ttgc-watermark">${initial}</div>
+    <div class="cta-intro">
+      In honor of your Simcha,<br />
+      a One-Year Subscription to TropeTrainer<br />
+      is presented to:
+    </div>
 
-      <div class="ttgc-body">
-        <div class="ttgc-brand">
-          ${
-            shopLogoUrl
-              ? `<img src="${shopLogoUrl}" class="ttgc-logo" alt="${shopName}">`
-              : `<div class="ttgc-brand-name">${shopName}</div>`
-          }
-          <div class="ttgc-brand-rule"></div>
-        </div>
+    <div class="cta-recipient-line">{{recipientName}}</div>
 
-        <div class="ttgc-heading-block">
-          <div class="ttgc-kicker">Certificate of Gift Subscription</div>
-          <div class="ttgc-title">TropeTrainer</div>
-          <div class="ttgc-subtitle">One-Year Online Subscription</div>
-        </div>
+    <div class="cta-section-label">You are scheduled to Chant Torah on the following dates:</div>
+    <div class="cta-dates-grid">
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+    </div>
 
-        <div class="ttgc-divider">
-          <span class="ttgc-divider-line"></span>
-          <span class="ttgc-divider-mark"></span>
-          <span class="ttgc-divider-line"></span>
-        </div>
+    <div class="cta-section-label">Go to tropetrainer.com/activate to get started:</div>
+    <div class="cta-code-box">{{activationCode}}</div>
 
-        <div class="ttgc-recipient-block">
-          <div class="ttgc-presented-label">This certificate is presented to</div>
-          <div class="ttgc-recipient-name">${recipientName || "Recipient Name"}</div>
-          <div class="ttgc-giver-line">
-            with a gift subscription from
-            <strong>${giverName || "Gift Giver"}</strong>
-          </div>
-        </div>
-
-        <div class="ttgc-code-card">
-          <div class="ttgc-code-label">Activation Code</div>
-          <div class="ttgc-code-value">${activationCode || "TT-XXXX-XXXX"}</div>
-        </div>
-
-        <p class="ttgc-instructions">
-          Redeem at <strong>tropetrainer.com</strong> using the activation code above to begin your one-year subscription.
-        </p>
-
-        <div class="ttgc-footer">
-          <div class="ttgc-footer-left">
-            <div class="ttgc-footer-row">
-              <span class="ttgc-footer-label">Issued</span>
-              <strong class="ttgc-footer-value">${formattedDate}</strong>
-            </div>
-            <div class="ttgc-footer-row">
-              <span class="ttgc-footer-label">Purchased through</span>
-              <strong class="ttgc-footer-value">${shopName}</strong>
-            </div>
-          </div>
-
-          <div class="ttgc-seal">
-            <div class="ttgc-seal-wrap">
-              <span class="ttgc-seal-tick ttgc-seal-tick-top"></span>
-              <span class="ttgc-seal-tick ttgc-seal-tick-right"></span>
-              <span class="ttgc-seal-tick ttgc-seal-tick-bottom"></span>
-              <span class="ttgc-seal-tick ttgc-seal-tick-left"></span>
-              <div class="ttgc-seal-ring">
-                <span class="ttgc-seal-letter">${initial}</span>
-              </div>
-            </div>
-            <div class="ttgc-seal-caption">Gift Certificate</div>
-          </div>
-        </div>
-      </div>
+    <div class="cta-footer-logos">
+      <img src="{{tropetrainerLogoUrl}}" alt="TropeTrainer" />
+      <img src="{{cantorsLogoUrl}}" alt="Cantors Assembly" />
     </div>
   </div>
 </body>
 </html>`;
-}

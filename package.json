@@ -23,6 +23,7 @@
     "node": ">=20.19 <22 || >=22.12"
   },
   "dependencies": {
+    "@babel/runtime": "^8.0.0",
     "@codemirror/lang-html": "^6.4.11",
     "@prisma/client": "^6.2.1",
     "@remix-run/dev": "^2.16.1",

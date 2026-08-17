@@ -25,6 +25,7 @@ export default function App() {
           Gift Codes
         </Link>
         <Link to="/app/certificate">Certificate</Link>
+        <Link to="/app/verify-code">Verify Code</Link>
         <Link to="/app/settings">Settings</Link>
       </NavMenu>
       <Outlet />

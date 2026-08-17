@@ -39,12 +39,14 @@ model GiftCode {
   shopifyOrderId  String    @unique
   shopifyOrderName String
   idempotencyKey  String    @unique
-  status          String // pending | issued | failed
+  status          String // pending | issued | failed | redeemed | revoked
   code            String?
   accessCodeId    String?
   requestId       String?
   errorCode       String?
   errorMessage    String?
+  redeemedAt      DateTime?
+  statusCheckedAt DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }

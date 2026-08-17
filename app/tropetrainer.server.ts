@@ -112,3 +112,77 @@ export async function createAccessCode(
     requestId: headerRequestId,
   };
 }
+
+export type AccessCodeStatusResult =
+  | {
+      ok: true;
+      status: string; // issued | redeemed | revoked
+      redeemedAt: string | null;
+    }
+  | {
+      ok: false;
+      message: string;
+      errorCode: string | null;
+      retryable: boolean;
+      requestId: string | null;
+      retryAfterSeconds: number | null;
+    };
+
+// Never log the Authorization header — it's a secret per TropeTrainer's API terms.
+export async function checkAccessCodeStatus(
+  idempotencyKey: string,
+): Promise<AccessCodeStatusResult> {
+  const apiKey = process.env.TROPETRAINER_API_KEY;
+  if (!apiKey) {
+    return failure("TROPETRAINER_API_KEY is not configured");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${TROPETRAINER_API_URL}/status`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ key: idempotencyKey }),
+    });
+  } catch (err) {
+    return failure(
+      `Network error calling TropeTrainer status API: ${(err as Error).message}`,
+      { retryable: true },
+    );
+  }
+
+  const headerRequestId = response.headers.get("x-request-id");
+  const retryAfterHeader = response.headers.get("retry-after");
+  const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : null;
+
+  if (!response.ok) {
+    const parsed = await response.json().catch(() => null);
+    const errorObj = parsed?.error;
+
+    if (errorObj) {
+      return failure(errorObj.message || `TropeTrainer status API returned ${response.status}`, {
+        errorCode: errorObj.code ?? null,
+        retryable: Boolean(errorObj.retryable),
+        requestId: errorObj.request_id ?? headerRequestId,
+        retryAfterSeconds,
+      });
+    }
+
+    return failure(`TropeTrainer status API returned ${response.status} with no parseable error body`, {
+      retryable: response.status >= 500,
+      requestId: headerRequestId,
+      retryAfterSeconds,
+    });
+  }
+
+  const data = await response.json();
+  return {
+    ok: true,
+    status: data.status,
+    redeemedAt: data.redeemed_at ?? null,
+  };
+}

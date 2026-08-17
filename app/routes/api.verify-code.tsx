@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import db from "../db.server";
+import { checkAccessCodeStatus } from "../tropetrainer.server";
 
 // Public, unauthenticated JSON API — called via fetch() from a widget
 // embedded in the storefront theme (a different origin than this app), so
@@ -31,17 +32,48 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const record = await db.giftCode.findFirst({
     where: { code },
-    select: { status: true, redeemedAt: true },
+    select: { id: true, idempotencyKey: true, status: true, redeemedAt: true },
   });
 
   if (!record) {
     return jsonResponse({ found: false, message: "We couldn't find that code." });
   }
 
+  // TropeTrainer's status endpoint only accepts our internal idempotency
+  // key, never the customer-facing code — that lookup happens first above.
+  const live = await checkAccessCodeStatus(record.idempotencyKey);
+
+  if (!live.ok) {
+    // Live check failed (network blip, rate limit, etc.) — fall back to our
+    // last-known status rather than showing an error for a working code.
+    return jsonResponse({
+      found: true,
+      status: record.status,
+      redeemedAt: record.redeemedAt,
+      live: false,
+    });
+  }
+
+  // Keep our own record in sync with what we just learned, same as the
+  // periodic sync job — a live check is itself a status refresh.
+  if (live.status !== record.status || live.redeemedAt) {
+    await db.giftCode
+      .update({
+        where: { id: record.id },
+        data: {
+          status: live.status,
+          redeemedAt: live.redeemedAt ? new Date(live.redeemedAt) : record.redeemedAt,
+          statusCheckedAt: new Date(),
+        },
+      })
+      .catch(() => {});
+  }
+
   return jsonResponse({
     found: true,
-    status: record.status,
-    redeemedAt: record.redeemedAt,
+    status: live.status,
+    redeemedAt: live.redeemedAt ?? record.redeemedAt,
+    live: true,
   });
 };
 

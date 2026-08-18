@@ -9,6 +9,15 @@ export function getTropeTrainerConnectionStatus() {
   };
 }
 
+type ApiFailure = {
+  ok: false;
+  message: string;
+  errorCode: string | null;
+  retryable: boolean;
+  requestId: string | null;
+  retryAfterSeconds: number | null;
+};
+
 export type AccessCodeResult =
   | {
       ok: true;
@@ -17,14 +26,7 @@ export type AccessCodeResult =
       status: string;
       requestId: string | null;
     }
-  | {
-      ok: false;
-      message: string;
-      errorCode: string | null;
-      retryable: boolean;
-      requestId: string | null;
-      retryAfterSeconds: number | null;
-    };
+  | ApiFailure;
 
 function failure(
   message: string,
@@ -34,7 +36,7 @@ function failure(
     requestId: string | null;
     retryAfterSeconds: number | null;
   }> = {},
-): AccessCodeResult {
+): ApiFailure {
   return {
     ok: false,
     message,
@@ -119,14 +121,7 @@ export type AccessCodeStatusResult =
       status: string; // issued | redeemed | revoked
       redeemedAt: string | null;
     }
-  | {
-      ok: false;
-      message: string;
-      errorCode: string | null;
-      retryable: boolean;
-      requestId: string | null;
-      retryAfterSeconds: number | null;
-    };
+  | ApiFailure;
 
 // Never log the Authorization header — it's a secret per TropeTrainer's API terms.
 export async function checkAccessCodeStatus(

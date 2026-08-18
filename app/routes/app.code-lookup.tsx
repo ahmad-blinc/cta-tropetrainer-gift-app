@@ -33,8 +33,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     css: widget.css,
     isHtmlCustom: widget.isHtmlCustom,
     isCssCustom: widget.isCssCustom,
-    defaultHtml: DEFAULT_WIDGET_HTML,
-    defaultCss: DEFAULT_WIDGET_CSS,
   });
 };
 
@@ -141,8 +139,7 @@ function CodeBlock({ children }: { children: string }) {
 }
 
 export default function CodeLookup() {
-  const { appUrl, shop, html, css, isHtmlCustom, isCssCustom, defaultHtml, defaultCss } =
-    useLoaderData<typeof loader>();
+  const { appUrl, shop, html, css, isHtmlCustom, isCssCustom } = useLoaderData<typeof loader>();
   const [selectedTab, setSelectedTab] = useState(0);
 
   const globalSnippet = useMemo(() => buildGlobalSnippet(appUrl, shop), [appUrl, shop]);
@@ -154,9 +151,9 @@ export default function CodeLookup() {
   );
 
   const tabs = [
-    { id: "preview", content: "Preview" },
     { id: "html", content: "HTML" },
     { id: "css", content: "CSS" },
+    { id: "preview", content: "Preview" },
     { id: "setup", content: "Setup" },
   ];
 
@@ -173,6 +170,30 @@ export default function CodeLookup() {
           <Tabs tabs={tabs} selected={selectedTab} onSelect={setSelectedTab} fitted>
             {selectedTab === 0 && (
               <Box padding="400">
+                <CodeEditorTab
+                  intent="html"
+                  language="html"
+                  value={html}
+                  isCustom={isHtmlCustom}
+                  note="Edit freely, but keep the class names and ids (ctaw-form, ctaw-input, ctaw-btn, ctaw-btn-text, ctaw-spinner, ctaw-result) — the widget's behavior is wired to them."
+                />
+              </Box>
+            )}
+
+            {selectedTab === 1 && (
+              <Box padding="400">
+                <CodeEditorTab
+                  intent="css"
+                  language="css"
+                  value={css}
+                  isCustom={isCssCustom}
+                  note="Full control over styling — colors, spacing, fonts, everything."
+                />
+              </Box>
+            )}
+
+            {selectedTab === 2 && (
+              <Box padding="400">
                 <BlockStack gap="300">
                   <Text as="h2" variant="headingSm">
                     Live preview
@@ -185,36 +206,10 @@ export default function CodeLookup() {
                     />
                   </Box>
                   <Text as="p" variant="bodySm" tone="subdued">
-                    Reflects your saved HTML and CSS below — this is a real, live copy of what
-                    ships to the storefront.
+                    Reflects your saved HTML and CSS — this is a real, live copy of what ships to
+                    the storefront.
                   </Text>
                 </BlockStack>
-              </Box>
-            )}
-
-            {selectedTab === 1 && (
-              <Box padding="400">
-                <CodeEditorTab
-                  intent="html"
-                  language="html"
-                  value={html}
-                  defaultValue={defaultHtml}
-                  isCustom={isHtmlCustom}
-                  note="Edit freely, but keep the class names and ids (ctaw-form, ctaw-input, ctaw-btn, ctaw-btn-text, ctaw-spinner, ctaw-result) — the widget's behavior is wired to them."
-                />
-              </Box>
-            )}
-
-            {selectedTab === 2 && (
-              <Box padding="400">
-                <CodeEditorTab
-                  intent="css"
-                  language="css"
-                  value={css}
-                  defaultValue={defaultCss}
-                  isCustom={isCssCustom}
-                  note="Full control over styling — colors, spacing, fonts, everything."
-                />
               </Box>
             )}
 
@@ -282,14 +277,12 @@ function CodeEditorTab({
   intent,
   language,
   value,
-  defaultValue,
   isCustom,
   note,
 }: {
   intent: "html" | "css";
   language: "html" | "css";
   value: string;
-  defaultValue: string;
   isCustom: boolean;
   note: string;
 }) {
@@ -361,11 +354,6 @@ function CodeEditorTab({
         }}
         style={{ fontSize: "13px" }}
       />
-
-      <Text as="p" variant="bodySm" tone="subdued">
-        Default reference:
-      </Text>
-      <CodeBlock>{defaultValue}</CodeBlock>
     </BlockStack>
   );
 }

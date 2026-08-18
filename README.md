@@ -2,7 +2,7 @@
 
 Shopify custom app for **Chant Torah America** (store: `chant-torah-america.myshopify.com`). When a customer buys the "One Year Subscription Gift" product, the app calls the TropeTrainer API to issue an activation code, then serves a branded PDF certificate at a public link included in the order confirmation email.
 
-**Contents:** [What it does](#what-it-does) · [Stack](#stack) · [Environment variables](#required-environment-variables) · [Local dev](#local-development) · [Deploying](#deploying-railway) · [Testing without the real key](#testing-without-the-real-tropetrainer-key) · [Repo layout](#repo-layout)
+**Contents:** [What it does](#what-it-does) · [Stack](#stack) · [Environment variables](#required-environment-variables) · [Local dev](#local-development) · [Deploying](#deploying-railway) · [Switching to the real key](#switching-to-the-real-tropetrainer-key-go-live) · [Testing without the real key](#testing-without-the-real-tropetrainer-key) · [Repo layout](#repo-layout)
 
 ## What it does
 
@@ -30,7 +30,7 @@ Shopify custom app for **Chant Torah America** (store: `chant-torah-america.mysh
 | `DATABASE_URL` | Postgres connection string. On Railway, reference the Postgres service: `${{Postgres.DATABASE_URL}}` |
 | `CERTIFICATE_SECRET` | Random secret for signing certificate tokens/links. Falls back to `SHOPIFY_API_SECRET` if unset — set it explicitly in production. |
 | `TROPETRAINER_API_KEY` | Real key from TropeTrainer. **Without this, the app safely no-ops** (shows "Not configured" in Settings, doesn't crash) — see below. |
-| `TROPETRAINER_API_URL` | Only set this to override the default production TropeTrainer endpoint (e.g. for testing against a mock). Leave unset in production. |
+| `TROPETRAINER_API_URL` | Only set this to override the default production TropeTrainer endpoint (e.g. for testing, or against a mock). Currently set to TropeTrainer's **test** endpoint (`.../api/test/access-codes`) — production is intentionally on hold until the client coordinates activation with TropeTrainer. See "Switching to the real key" below for how to flip it. |
 
 The admin Settings page (`app.settings.tsx`) shows live status for the last two — a warning banner appears if the API key is missing or the endpoint isn't the default production one. Check that page after any deploy that touches these.
 
@@ -50,6 +50,16 @@ The app is hosted on Railway, not Vercel/Heroku — the Shopify Remix template n
 1. Push to `main` — Railway is connected via the GitHub App and auto-deploys.
 2. Config changes in `shopify.app.cta-tropetrainer-gift-app.toml` (scopes, webhooks, app URL, name) need a **separate** manual step — `npm run deploy` (runs `shopify app deploy`) — pushing to GitHub does **not** update the Partner Dashboard.
 3. `npm run setup` (runs on every container boot via `docker-start`) does `prisma generate && prisma migrate deploy`, applying any new files in `prisma/migrations/`. To change the schema going forward: edit `prisma/schema.prisma`, then run `prisma migrate dev --name <description>` against a real Postgres connection (e.g. Railway's `DATABASE_PUBLIC_URL`) to generate the migration file, and commit it — don't hand-edit migration SQL or use `db push` against production.
+
+### Switching to the real TropeTrainer key (go-live)
+
+The key/URL live only as Railway env vars on the main app service — never in the database or the app's UI, since they're a credential, not merchant-facing configuration.
+
+1. Railway dashboard → **cta-tropetrainer-gift-app** service → **Variables**.
+2. Set `TROPETRAINER_API_KEY` to the production key from the client.
+3. Either delete `TROPETRAINER_API_URL` entirely (the code's default is already the production endpoint) or set it explicitly to `https://www.tropetrainer.com/api/access-codes`.
+4. Railway auto-redeploys on variable change — wait for the deploy to show Success.
+5. Verify in the app: Shopify admin → **Settings** page → "TropeTrainer connection" card should show API key **Configured** and endpoint **Production**. If it doesn't update within a minute, manually trigger **Deployments → ⋮ → Redeploy** on the latest deployment.
 
 <details>
 <summary><strong>Known infrastructure gotchas</strong> (already fixed — click to expand for why)</summary>

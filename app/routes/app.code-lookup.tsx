@@ -368,7 +368,7 @@ function CodeEditorTab({
           {isDirty && <Badge tone="attention">Unsaved changes</Badge>}
         </InlineStack>
         <InlineStack gap="200">
-          <Button onClick={handleReset} disabled={isSaving}>
+          <Button onClick={handleReset} disabled={isSaving || (!isCustom && !isDirty)}>
             Reset to default
           </Button>
           <Button variant="primary" onClick={handleSave} loading={isSaving} disabled={!isDirty || isSaving}>

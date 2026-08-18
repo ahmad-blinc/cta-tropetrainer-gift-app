@@ -1,0 +1,19 @@
+{% if block.settings.app_url != blank %}
+<link rel="stylesheet" href="{{ block.settings.app_url }}/verify-widget.css?shop={{ shop.permanent_domain }}">
+<script src="{{ block.settings.app_url }}/verify-widget.js?shop={{ shop.permanent_domain }}" defer></script>
+{% endif %}
+
+{% schema %}
+{
+  "name": "Code Lookup Widget",
+  "target": "head",
+  "settings": [
+    {
+      "type": "text",
+      "id": "app_url",
+      "label": "App URL",
+      "default": "https://cta-tropetrainer-gift-app-production.up.railway.app"
+    }
+  ]
+}
+{% endschema %}

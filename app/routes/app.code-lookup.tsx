@@ -215,54 +215,99 @@ export default function CodeLookup() {
 
             {selectedTab === 3 && (
               <Box padding="400">
-                <BlockStack gap="400">
-                  <List type="number">
-                    <List.Item>
-                      Paste this once, sitewide — in your theme's{" "}
-                      <Text as="span" variant="bodySm" fontWeight="medium">
-                        theme.liquid
-                      </Text>{" "}
-                      layout file, just before{" "}
-                      <Text as="span" variant="bodySm" fontWeight="medium">
-                        {"</head>"}
-                      </Text>
-                      .
-                    </List.Item>
-                    <List.Item>
-                      In Shopify admin, go to{" "}
-                      <Text as="span" variant="bodySm" fontWeight="medium">
-                        Online Store → Pages
-                      </Text>{" "}
-                      and create a page, e.g. "Verify Your Gift Code".
-                    </List.Item>
-                    <List.Item>
-                      Open the theme editor for that page, add a{" "}
-                      <Text as="span" variant="bodySm" fontWeight="medium">
-                        Custom Liquid
-                      </Text>{" "}
-                      section, and paste just the placeholder div into it — nothing else.
-                    </List.Item>
-                  </List>
+                <BlockStack gap="500">
+                  <Card>
+                    <BlockStack gap="300">
+                      <InlineStack gap="200" blockAlign="center">
+                        <Text as="h3" variant="headingSm">
+                          Option A — No code (recommended)
+                        </Text>
+                        <Badge tone="success">Zero paste</Badge>
+                      </InlineStack>
+                      <List type="number">
+                        <List.Item>
+                          In the theme editor, go to{" "}
+                          <Text as="span" variant="bodySm" fontWeight="medium">
+                            App embeds
+                          </Text>{" "}
+                          and turn on{" "}
+                          <Text as="span" variant="bodySm" fontWeight="medium">
+                            Code Lookup Widget
+                          </Text>
+                          . This loads the widget sitewide — nothing to paste.
+                        </List.Item>
+                        <List.Item>
+                          In Shopify admin, go to{" "}
+                          <Text as="span" variant="bodySm" fontWeight="medium">
+                            Online Store → Pages
+                          </Text>{" "}
+                          and create a page, e.g. "Verify Your Gift Code".
+                        </List.Item>
+                        <List.Item>
+                          Open that page in the theme editor, click{" "}
+                          <Text as="span" variant="bodySm" fontWeight="medium">
+                            Add block
+                          </Text>{" "}
+                          on a section that supports app blocks, and choose{" "}
+                          <Text as="span" variant="bodySm" fontWeight="medium">
+                            Code Lookup
+                          </Text>
+                          .
+                        </List.Item>
+                      </List>
+                    </BlockStack>
+                  </Card>
 
-                  <BlockStack gap="200">
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Text as="h3" variant="headingSm">
-                        1. Paste once in theme.liquid
-                      </Text>
-                      <CopyButton text={globalSnippet} label="Copy" />
-                    </InlineStack>
-                    <CodeBlock>{globalSnippet}</CodeBlock>
-                  </BlockStack>
+                  <Card>
+                    <BlockStack gap="300">
+                      <InlineStack gap="200" blockAlign="center">
+                        <Text as="h3" variant="headingSm">
+                          Option B — Manual paste (fallback)
+                        </Text>
+                        <Badge>If app embeds aren't supported by your theme</Badge>
+                      </InlineStack>
+                      <List type="number">
+                        <List.Item>
+                          Paste this once, sitewide — in your theme's{" "}
+                          <Text as="span" variant="bodySm" fontWeight="medium">
+                            theme.liquid
+                          </Text>{" "}
+                          layout file, just before{" "}
+                          <Text as="span" variant="bodySm" fontWeight="medium">
+                            {"</head>"}
+                          </Text>
+                          .
+                        </List.Item>
+                        <List.Item>
+                          On the page where the widget should appear, add a{" "}
+                          <Text as="span" variant="bodySm" fontWeight="medium">
+                            Custom Liquid
+                          </Text>{" "}
+                          section and paste just the placeholder div into it.
+                        </List.Item>
+                      </List>
 
-                  <BlockStack gap="200">
-                    <InlineStack align="space-between" blockAlign="center">
-                      <Text as="h3" variant="headingSm">
-                        2. Paste on the page where the widget should appear
-                      </Text>
-                      <CopyButton text={PLACEHOLDER_DIV} label="Copy" />
-                    </InlineStack>
-                    <CodeBlock>{PLACEHOLDER_DIV}</CodeBlock>
-                  </BlockStack>
+                      <BlockStack gap="200">
+                        <InlineStack align="space-between" blockAlign="center">
+                          <Text as="h3" variant="headingSm">
+                            1. Paste once in theme.liquid
+                          </Text>
+                          <CopyButton text={globalSnippet} label="Copy" />
+                        </InlineStack>
+                        <CodeBlock>{globalSnippet}</CodeBlock>
+                      </BlockStack>
+
+                      <BlockStack gap="200">
+                        <InlineStack align="space-between" blockAlign="center">
+                          <Text as="h3" variant="headingSm">
+                            2. Paste on the page where the widget should appear
+                          </Text>
+                          <CopyButton text={PLACEHOLDER_DIV} label="Copy" />
+                        </InlineStack>
+                        <CodeBlock>{PLACEHOLDER_DIV}</CodeBlock>
+                      </BlockStack>
+                    </BlockStack>
+                  </Card>
                 </BlockStack>
               </Box>
             )}

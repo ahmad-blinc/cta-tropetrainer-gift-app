@@ -88,3 +88,11 @@ model CertificateStatusMessages {
   contactLinkVisibility String   @default("delayed") // "processing" | "delayed" | "both"
   updatedAt             DateTime @updatedAt
 }
+
+model VerifyWidgetSettings {
+  id        String   @id @default(cuid())
+  shop      String   @unique
+  html      String?
+  css       String?
+  updatedAt DateTime @updatedAt
+}

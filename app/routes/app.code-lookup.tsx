@@ -262,9 +262,35 @@ export default function CodeLookup() {
                     <BlockStack gap="300">
                       <InlineStack gap="200" blockAlign="center">
                         <Text as="h3" variant="headingSm">
-                          Option B — Manual paste (fallback)
+                          Option B — App embed on, place the div yourself
                         </Text>
-                        <Badge>If app embeds aren't supported by your theme</Badge>
+                        <Badge>For exact placement, e.g. inside Custom Liquid</Badge>
+                      </InlineStack>
+                      <Text as="p" variant="bodySm" tone="subdued">
+                        Once the app embed above is turned on, the script and styles already load
+                        sitewide — so this is all you ever need to paste, anywhere you want the
+                        widget to appear.
+                      </Text>
+
+                      <BlockStack gap="200">
+                        <InlineStack align="space-between" blockAlign="center">
+                          <Text as="h3" variant="headingSm">
+                            Paste on the page where the widget should appear
+                          </Text>
+                          <CopyButton text={PLACEHOLDER_DIV} label="Copy" />
+                        </InlineStack>
+                        <CodeBlock>{PLACEHOLDER_DIV}</CodeBlock>
+                      </BlockStack>
+                    </BlockStack>
+                  </Card>
+
+                  <Card>
+                    <BlockStack gap="300">
+                      <InlineStack gap="200" blockAlign="center">
+                        <Text as="h3" variant="headingSm">
+                          Option C — Fully manual (rare)
+                        </Text>
+                        <Badge>Only if App embeds isn't available in your theme editor</Badge>
                       </InlineStack>
                       <List type="number">
                         <List.Item>

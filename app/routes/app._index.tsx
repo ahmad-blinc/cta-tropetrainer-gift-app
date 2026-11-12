@@ -34,6 +34,7 @@ import { getTropeTrainerConnectionStatus } from "../tropetrainer.server";
 import type { OrderDetails } from "./app.order-details";
 
 const PAGE_SIZE = 20;
+const STUCK_PENDING_MS = 5 * 60 * 1000;
 const STATUS_LABELS: Record<string, string> = {
   issued: "Issued",
   failed: "Failed",
@@ -397,7 +398,12 @@ function GiftCodeRow({
         </Text>
       </IndexTable.Cell>
       <IndexTable.Cell>
-        {record.status === "failed" && (
+        {(record.status === "failed" ||
+          // Codes are issued in the background after the webhook responds; if
+          // the server restarted mid-issue, the order stays "pending" — allow a
+          // manual retry once it's clearly stuck. Same idempotency key, so safe.
+          (record.status === "pending" &&
+            Date.now() - new Date(record.createdAt).getTime() > STUCK_PENDING_MS)) && (
           <retryFetcher.Form method="post">
             <input type="hidden" name="id" value={record.id} />
             <Button size="slim" loading={isRetrying} submit>

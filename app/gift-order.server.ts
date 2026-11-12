@@ -67,6 +67,22 @@ export async function hasAnyGiftProduct(admin: AdminClient): Promise<boolean> {
 
 type AttemptResult = { ok: true } | { ok: false; retryable: boolean };
 
+const MAX_RETRY_DELAY_MS = 30_000;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Per TropeTrainer's spec: respect Retry-After when present, otherwise
+// exponential backoff with jitter starting around one second.
+function retryDelayMs(attempt: number, retryAfterSeconds: number | null): number {
+  if (retryAfterSeconds != null && retryAfterSeconds >= 0) {
+    return Math.min(retryAfterSeconds * 1000, MAX_RETRY_DELAY_MS);
+  }
+  const base = Math.min(1000 * 2 ** (attempt - 1), MAX_RETRY_DELAY_MS);
+  return base + Math.floor(Math.random() * 500);
+}
+
 // The single place that ever calls TropeTrainer and reconciles the result
 // against Shopify. Used by both the orders/paid webhook and the admin "Retry"
 // action, so there is exactly one code path — no drift between the two entry points.
@@ -77,8 +93,14 @@ export async function attemptIssueCode(params: {
   shopifyOrderId: string;
   shopifyOrderName: string;
   idempotencyKey: string;
+  // How many times to call TropeTrainer on retryable errors (409 in progress,
+  // 429, 5xx, timeouts) before marking the order failed. The webhook's
+  // background job uses several; the admin Retry button uses 1 so the
+  // merchant's click never hangs.
+  maxAttempts?: number;
 }): Promise<AttemptResult> {
   const { admin, shop, orderGid, shopifyOrderId, shopifyOrderName, idempotencyKey } = params;
+  const maxAttempts = Math.max(1, params.maxAttempts ?? 1);
 
   await db.giftCode.upsert({
     where: { shopifyOrderId },
@@ -86,7 +108,18 @@ export async function attemptIssueCode(params: {
     update: { status: "pending", errorCode: null, errorMessage: null },
   });
 
-  const result = await createAccessCode(idempotencyKey);
+  // Same idempotency key on every attempt — TropeTrainer returns the original
+  // result instead of creating a second code or charge.
+  let result = await createAccessCode(idempotencyKey);
+  for (let attempt = 1; !result.ok && result.retryable && attempt < maxAttempts; attempt++) {
+    const delay = retryDelayMs(attempt, result.retryAfterSeconds);
+    console.warn(
+      `TropeTrainer attempt ${attempt}/${maxAttempts} for order ${shopifyOrderName} failed ` +
+        `[${result.errorCode ?? "unknown"}] — retrying in ${Math.round(delay / 1000)}s`,
+    );
+    await sleep(delay);
+    result = await createAccessCode(idempotencyKey);
+  }
 
   if (!result.ok) {
     console.error(

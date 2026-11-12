@@ -1,6 +1,10 @@
 const DEFAULT_TROPETRAINER_API_URL = "https://www.tropetrainer.com/api/access-codes";
 const TROPETRAINER_API_URL = process.env.TROPETRAINER_API_URL || DEFAULT_TROPETRAINER_API_URL;
 
+// TropeTrainer's spec: "Use a client request timeout of at least 30 seconds."
+// Creating a code charges a card, which can take a while — give it room.
+const CREATE_CODE_TIMEOUT_MS = 35_000;
+
 export function getTropeTrainerConnectionStatus() {
   return {
     apiKeyConfigured: Boolean(process.env.TROPETRAINER_API_KEY),
@@ -57,6 +61,9 @@ export async function createAccessCode(
     return failure("TROPETRAINER_API_KEY is not configured");
   }
 
+  const startedAt = Date.now();
+  const elapsed = () => `${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+
   let response: Response;
   try {
     response = await fetch(TROPETRAINER_API_URL, {
@@ -68,19 +75,29 @@ export async function createAccessCode(
         Accept: "application/json",
       },
       body: JSON.stringify({}),
+      signal: AbortSignal.timeout(CREATE_CODE_TIMEOUT_MS),
     });
   } catch (err) {
     // Network/timeout failures are retryable per spec — a timeout doesn't mean
     // the purchase failed, retrying with the same key returns the authoritative result.
-    return failure(
-      `Network error calling TropeTrainer API: ${(err as Error).message}`,
-      { retryable: true },
-    );
+    const timedOut = (err as Error).name === "TimeoutError";
+    const message = timedOut
+      ? `TropeTrainer API did not respond within ${CREATE_CODE_TIMEOUT_MS / 1000}s`
+      : `Network error calling TropeTrainer API: ${(err as Error).message}`;
+    console.warn(`[tropetrainer] key=${idempotencyKey} → ${message} (after ${elapsed()})`);
+    return failure(message, { retryable: true });
   }
 
   const headerRequestId = response.headers.get("x-request-id");
   const retryAfterHeader = response.headers.get("retry-after");
-  const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : null;
+  const parsedRetryAfter = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+  const retryAfterSeconds = Number.isFinite(parsedRetryAfter) ? parsedRetryAfter : null;
+
+  // Timing log so request duration is visible in Railway logs. Never log the
+  // code or the Authorization header.
+  console.log(
+    `[tropetrainer] key=${idempotencyKey} → HTTP ${response.status} in ${elapsed()} (requestId=${headerRequestId ?? "none"})`,
+  );
 
   if (!response.ok) {
     // Per spec, an upstream failure can return a non-JSON 5xx body — tolerate that.

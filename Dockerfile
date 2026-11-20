@@ -1,5 +1,11 @@
 FROM node:20-alpine
 RUN apk add --no-cache openssl chromium nss freetype harfbuzz ca-certificates ttf-freefont
+# Real Times New Roman for the gift certificate (matches the client's design).
+# Microsoft's core fonts are downloaded at build time; if that download ever
+# fails the build still succeeds and the certificate falls back to Tinos.
+RUN apk add --no-cache msttcorefonts-installer fontconfig \
+  && (update-ms-fonts || echo "WARNING: MS core fonts download failed, certificate will use Tinos") \
+  && fc-cache -f
 
 EXPOSE 3000
 

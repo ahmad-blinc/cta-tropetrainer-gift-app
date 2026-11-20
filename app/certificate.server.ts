@@ -124,7 +124,16 @@ export type CertificateData = {
   sealImageUrl: string;
   tropetrainerLogoUrl: string;
   cantorsLogoUrl: string;
+  rulesImageUrl: string;
 };
+
+// The name line, scheduled-date lines and code box, cropped pixel-for-pixel
+// from the client's own 300 DPI certificate artwork so they look identical to
+// their design in every viewer and on paper. Not a merchant brand asset.
+function getRulesImageUrl(): string {
+  const base = (process.env.SHOPIFY_APP_URL || "").replace(/\/$/, "");
+  return `${base}/certificate-assets/rules-default.png`;
+}
 
 export const SAMPLE_CERTIFICATE_DATA: CertificateData = {
   recipientName: "Jordan Rivera",
@@ -137,6 +146,7 @@ export const SAMPLE_CERTIFICATE_DATA: CertificateData = {
   sealImageUrl: getDefaultAssetUrl("seal"),
   tropetrainerLogoUrl: getDefaultAssetUrl("tropetrainerLogo"),
   cantorsLogoUrl: getDefaultAssetUrl("cantorsLogo"),
+  rulesImageUrl: getRulesImageUrl(),
 };
 
 export const CERTIFICATE_VARIABLES: { key: keyof CertificateData; description: string }[] = [
@@ -150,6 +160,7 @@ export const CERTIFICATE_VARIABLES: { key: keyof CertificateData; description: s
   { key: "shopLogoUrl", description: "The store's logo URL, if one is set (use with #shopLogoUrl / ^shopLogoUrl sections)" },
   { key: "formattedDate", description: "The order date, formatted (e.g. January 1, 2026)" },
   { key: "initial", description: "The store name's first letter, uppercased" },
+  { key: "rulesImageUrl", description: "The name line, date lines and code box artwork from the certificate design" },
 ];
 
 export async function getCertificateTemplate(shop: string): Promise<string> {
@@ -284,6 +295,7 @@ export async function generateCertificatePdf(
     sealImageUrl: assetUrls.seal,
     tropetrainerLogoUrl: assetUrls.tropetrainerLogo,
     cantorsLogoUrl: assetUrls.cantorsLogo,
+    rulesImageUrl: getRulesImageUrl(),
   };
 
   const template = await getCertificateTemplate(shop);
@@ -312,8 +324,9 @@ export async function generateCertificatePdf(
 // spacing can't drift. The page size is set with @page and honored via
 // preferCSSPageSize; the printer's "Fit to page" handles the paper choice.
 //
-// Font: Tinos is metric-compatible with Times New Roman (same glyph widths),
-// which the Alpine-based server doesn't have installed.
+// Font: real Times New Roman (installed in the Docker image via Microsoft's core
+// fonts — see Dockerfile) so the weight and letter shapes match the client's
+// PDF. Tinos (metric-compatible, same widths) is only a fallback.
 //
 // Data values are already HTML-escaped in generateCertificatePdf, so they're
 // rendered with triple braces to avoid double-escaping (e.g. "&" → "&amp;amp;").
@@ -322,6 +335,7 @@ export const DEFAULT_CERTIFICATE_TEMPLATE = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
+<title>TropeTrainer Gift Certificate</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Tinos:wght@400;700&display=block" rel="stylesheet" />
@@ -341,7 +355,7 @@ export const DEFAULT_CERTIFICATE_TEMPLATE = `<!doctype html>
     overflow: hidden;
     background: #ffffff;
     color: #000000;
-    font-family: "Tinos", "Times New Roman", Times, serif;
+    font-family: "Times New Roman", "Tinos", Times, serif;
   }
 
   .cta-abs { position: absolute; }
@@ -353,10 +367,11 @@ export const DEFAULT_CERTIFICATE_TEMPLATE = `<!doctype html>
     white-space: nowrap;
   }
   .cta-img { position: absolute; display: block; object-fit: contain; }
-  /* Rules and the code box are vector strokes at the exact positions and
-     thicknesses measured from the client PDF (CSS borders get snapped to
-     whole pixels and can't go below 1px). */
-  .cta-rules { position: absolute; left: 0; top: 0; width: 474.96pt; height: 733.92pt; }
+  /* Name line, date lines and code box: the client's own 300 DPI artwork
+     (pixel-exact crop), 290.64 x 170.4pt at (91.92, 456.72)pt. Placed with a
+     transform for the same reason as the seal below. */
+  .cta-rules { left: 0; top: 0; width: 387px; height: 227px; transform-origin: 0 0;
+    transform: translate(122.56px, 608.96px) scale(1.001343669, 1.000881057); }
 
   /* The seal and TropeTrainer logo are the client's own 300 DPI artwork; they're
      placed with transforms because Chrome snaps plain left/top/width/height to
@@ -366,9 +381,9 @@ export const DEFAULT_CERTIFICATE_TEMPLATE = `<!doctype html>
   .cta-seal { left: 0; top: 0; width: 582px; height: 403px; transform-origin: 0 0;
     transform: translate(23.04px, 59.2px) scale(1.000137457, 1.001290323); }
 
-  .cta-t1 { left: -0.24pt; top: 362.68pt; font-size: 15.12pt; line-height: 19.9pt; }
-  .cta-t2 { left: -0.24pt; top: 381.92pt; font-size: 18pt;    line-height: 23.7pt; }
-  .cta-t3 { top: 402.46pt; font-size: 15.12pt; line-height: 19.8pt; }
+  .cta-t1 { left: -0.24pt; top: 362.68pt; font-size: 15.12pt; line-height: 19.9pt; transform: translate(0.12pt, -0.36pt); }
+  .cta-t2 { left: -0.24pt; top: 381.92pt; font-size: 18pt;    line-height: 23.7pt; transform: translate(0.12pt, 0.24pt); }
+  .cta-t3 { top: 402.46pt; font-size: 15.12pt; line-height: 19.8pt; transform: translate(-0.12pt, -0.36pt); }
 
   .cta-name {
     position: absolute;
@@ -386,7 +401,7 @@ export const DEFAULT_CERTIFICATE_TEMPLATE = `<!doctype html>
 
   .cta-t4 { top: 486.54pt; font-size: 12pt; line-height: 15.8pt; }
 
-  .cta-t5 { top: 576.5pt; font-size: 12pt; line-height: 15.8pt; }
+  .cta-t5 { top: 576.5pt; font-size: 12pt; line-height: 15.8pt; transform: translate(0pt, -0.24pt); }
   .cta-code-box {
     position: absolute;
     left: 154.96pt;
@@ -401,26 +416,19 @@ export const DEFAULT_CERTIFICATE_TEMPLATE = `<!doctype html>
     letter-spacing: 1pt;
     white-space: nowrap;
   }
-  .cta-t6 { left: 0.24pt; top: 632.56pt; font-size: 12pt; line-height: 15.7pt; }
+  .cta-t6 { left: 0.24pt; top: 632.56pt; font-size: 12pt; line-height: 15.7pt; transform: translate(0.12pt, -0.12pt); }
 
   /* TropeTrainer logo: 176.4 x 42pt at (29.52, 665.28)pt */
   .cta-logo-tt { left: 0; top: 0; width: 235px; height: 56px; transform-origin: 0 0;
     transform: translate(39.36px, 887.04px) scale(1.000851064, 1); }
-  .cta-logo-cantors { left: 272.36pt; top: 664.56pt; width: 172.8pt; height: 43.4pt; }
+  /* Cantors Assembly logo: 172.8 x 43.44pt at (272.64, 664.8)pt */
+  .cta-logo-cantors { left: 0; top: 0; width: 230px; height: 58px; transform-origin: 0 0;
+    transform: translate(363.52px, 886.4px) scale(1.00173913, 0.99862069); }
 </style>
 </head>
 <body>
   <div class="cta-page">
-    <svg class="cta-rules" viewBox="0 0 474.96 733.92" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <g stroke="#000" fill="none">
-        <line x1="92.88" y1="458.26" x2="381.48" y2="458.26" stroke-width="0.68" />
-        <line x1="92.88" y1="526.83" x2="229.68" y2="526.83" stroke-width="0.77" />
-        <line x1="246.96" y1="526.83" x2="381.48" y2="526.83" stroke-width="0.77" />
-        <line x1="92.88" y1="557.79" x2="229.68" y2="557.79" stroke-width="0.77" />
-        <line x1="246.96" y1="557.79" x2="381.48" y2="557.79" stroke-width="0.77" />
-        <rect x="154.96" y="597.87" width="165.21" height="27.65" stroke-width="0.29" />
-      </g>
-    </svg>
+    <img class="cta-img cta-rules" src="{{rulesImageUrl}}" alt="" />
     <img class="cta-img cta-seal" src="{{sealImageUrl}}" alt="Chant Torah America" />
 
     <div class="cta-text cta-t1">In honor of your Simcha,</div>

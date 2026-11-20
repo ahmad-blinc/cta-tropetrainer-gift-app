@@ -353,13 +353,22 @@ export const DEFAULT_CERTIFICATE_TEMPLATE = `<!doctype html>
     white-space: nowrap;
   }
   .cta-img { position: absolute; display: block; object-fit: contain; }
-  .cta-line { position: absolute; height: 0; border-top: 0.75pt solid #000000; }
+  /* Rules and the code box are vector strokes at the exact positions and
+     thicknesses measured from the client PDF (CSS borders get snapped to
+     whole pixels and can't go below 1px). */
+  .cta-rules { position: absolute; left: 0; top: 0; width: 474.96pt; height: 733.92pt; }
 
-  .cta-seal  { left: 17.3pt;  top: 44.4pt;  width: 436.5pt; height: 302.6pt; }
+  /* The seal and TropeTrainer logo are the client's own 300 DPI artwork; they're
+     placed with transforms because Chrome snaps plain left/top/width/height to
+     whole CSS pixels, which would stretch them a fraction and resample (soften)
+     every pixel. Net result: exactly 300 DPI at the client's exact positions.
+     seal: 436.56 x 302.64pt at (17.28, 44.4)pt */
+  .cta-seal { left: 0; top: 0; width: 582px; height: 403px; transform-origin: 0 0;
+    transform: translate(23.04px, 59.2px) scale(1.000137457, 1.001290323); }
 
-  .cta-t1 { top: 361.0pt; font-size: 15.12pt; line-height: 19.9pt; }
-  .cta-t2 { top: 380.0pt; font-size: 18pt;    line-height: 23.7pt; }
-  .cta-t3 { top: 400.9pt; font-size: 15.12pt; line-height: 19.8pt; }
+  .cta-t1 { left: -0.24pt; top: 362.68pt; font-size: 15.12pt; line-height: 19.9pt; }
+  .cta-t2 { left: -0.24pt; top: 381.92pt; font-size: 18pt;    line-height: 23.7pt; }
+  .cta-t3 { top: 402.46pt; font-size: 15.12pt; line-height: 19.8pt; }
 
   .cta-name {
     position: absolute;
@@ -374,22 +383,16 @@ export const DEFAULT_CERTIFICATE_TEMPLATE = `<!doctype html>
     font-size: 18pt;
     font-weight: 700;
   }
-  .cta-name-line { left: 92.9pt; width: 288.5pt; top: 457.6pt; }
 
-  .cta-t4 { top: 485.1pt; font-size: 12pt; line-height: 15.8pt; }
-  .cta-date-1 { left: 92.9pt;  width: 136.6pt; top: 526.4pt; }
-  .cta-date-2 { left: 247pt;   width: 134.4pt; top: 526.4pt; }
-  .cta-date-3 { left: 92.9pt;  width: 136.6pt; top: 557.4pt; }
-  .cta-date-4 { left: 247pt;   width: 134.4pt; top: 557.4pt; }
+  .cta-t4 { top: 486.54pt; font-size: 12pt; line-height: 15.8pt; }
 
-  .cta-t5 { top: 574.7pt; font-size: 12pt; line-height: 15.8pt; }
+  .cta-t5 { top: 576.5pt; font-size: 12pt; line-height: 15.8pt; }
   .cta-code-box {
     position: absolute;
-    left: 154.8pt;
-    top: 597.6pt;
-    width: 165.6pt;
-    height: 28.3pt;
-    border: 0.3pt solid #000000;
+    left: 154.96pt;
+    top: 597.87pt;
+    width: 165.21pt;
+    height: 27.65pt;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -398,14 +401,26 @@ export const DEFAULT_CERTIFICATE_TEMPLATE = `<!doctype html>
     letter-spacing: 1pt;
     white-space: nowrap;
   }
-  .cta-t6 { top: 630.4pt; font-size: 12pt; line-height: 15.7pt; }
+  .cta-t6 { left: 0.24pt; top: 632.56pt; font-size: 12pt; line-height: 15.7pt; }
 
-  .cta-logo-tt      { left: 29.5pt;  top: 665.3pt; width: 176.4pt; height: 42pt; }
-  .cta-logo-cantors { left: 272.6pt; top: 664.8pt; width: 172.8pt; height: 43.4pt; }
+  /* TropeTrainer logo: 176.4 x 42pt at (29.52, 665.28)pt */
+  .cta-logo-tt { left: 0; top: 0; width: 235px; height: 56px; transform-origin: 0 0;
+    transform: translate(39.36px, 887.04px) scale(1.000851064, 1); }
+  .cta-logo-cantors { left: 272.36pt; top: 664.56pt; width: 172.8pt; height: 43.4pt; }
 </style>
 </head>
 <body>
   <div class="cta-page">
+    <svg class="cta-rules" viewBox="0 0 474.96 733.92" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <g stroke="#000" fill="none">
+        <line x1="92.88" y1="458.26" x2="381.48" y2="458.26" stroke-width="0.68" />
+        <line x1="92.88" y1="526.83" x2="229.68" y2="526.83" stroke-width="0.77" />
+        <line x1="246.96" y1="526.83" x2="381.48" y2="526.83" stroke-width="0.77" />
+        <line x1="92.88" y1="557.79" x2="229.68" y2="557.79" stroke-width="0.77" />
+        <line x1="246.96" y1="557.79" x2="381.48" y2="557.79" stroke-width="0.77" />
+        <rect x="154.96" y="597.87" width="165.21" height="27.65" stroke-width="0.29" />
+      </g>
+    </svg>
     <img class="cta-img cta-seal" src="{{sealImageUrl}}" alt="Chant Torah America" />
 
     <div class="cta-text cta-t1">In honor of your Simcha,</div>
@@ -413,13 +428,8 @@ export const DEFAULT_CERTIFICATE_TEMPLATE = `<!doctype html>
     <div class="cta-text cta-t3">is presented to:</div>
 
     <div class="cta-name" id="cta-name">{{{recipientName}}}</div>
-    <div class="cta-line cta-name-line"></div>
 
     <div class="cta-text cta-t4">You are scheduled to chant Torah on the following dates:</div>
-    <div class="cta-line cta-date-1"></div>
-    <div class="cta-line cta-date-2"></div>
-    <div class="cta-line cta-date-3"></div>
-    <div class="cta-line cta-date-4"></div>
 
     <div class="cta-text cta-t5">Insert the code below upon subscribing:</div>
     <div class="cta-code-box">{{{activationCode}}}</div>

@@ -296,139 +296,154 @@ export async function generateCertificatePdf(
     // Google Fonts load async; wait for them explicitly so the PDF doesn't
     // fall back to system fonts.
     await page.evaluateHandle("document.fonts.ready");
-    const pdf = await page.pdf({ format: "Letter", printBackground: true });
+    // preferCSSPageSize: the template's @page size wins (the default template
+    // uses the client's exact certificate size); templates without one fall
+    // back to Letter.
+    const pdf = await page.pdf({ format: "Letter", printBackground: true, preferCSSPageSize: true });
     return Buffer.from(pdf);
   } finally {
     await browser.close();
   }
 }
 
-// Matches Chant Torah America's official certificate design (client-provided
-// PDF): plain white Letter page, seal + arched banner, recipient name on a
-// fillable line, blank "scheduled dates" lines (intentionally left blank —
-// filled in by hand, not part of the order data), an activation code box,
-// and the TropeTrainer / Cantors Assembly logos anchored at the bottom.
+// Matches Chant Torah America's updated certificate design (client-provided
+// PDF, Nov 2026) 1:1 — every element is placed at the exact point position
+// measured from that PDF, on the same page size (474.96 × 733.92pt), so the
+// spacing can't drift. The page size is set with @page and honored via
+// preferCSSPageSize; the printer's "Fit to page" handles the paper choice.
+//
+// Font: Tinos is metric-compatible with Times New Roman (same glyph widths),
+// which the Alpine-based server doesn't have installed.
+//
+// Data values are already HTML-escaped in generateCertificatePdf, so they're
+// rendered with triple braces to avoid double-escaping (e.g. "&" → "&amp;amp;").
+// Scheduled-date lines stay blank — they're filled in by hand.
 export const DEFAULT_CERTIFICATE_TEMPLATE = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Tinos:wght@400;700&display=block" rel="stylesheet" />
 <style>
+  @page { size: 474.96pt 733.92pt; margin: 0; }
   * { box-sizing: border-box; }
-  body { margin: 0; }
+  html, body { margin: 0; padding: 0; width: 474.96pt; height: 733.4pt; overflow: hidden; }
 
-  .cta-certificate {
-    width: 100%;
-    min-height: 1056px;
-    padding: 70px 80px 50px;
+  /* A hair under the @page height: content exactly equal to the page height
+     makes Chrome spill a blank second page from rounding. */
+  .cta-page {
+    position: relative;
+    width: 474.96pt;
+    height: 733.4pt;
+    page-break-after: avoid;
+    break-after: avoid;
+    overflow: hidden;
     background: #ffffff;
-    color: #1a1a1a;
-    font-family: Arial, Helvetica, sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    color: #000000;
+    font-family: "Tinos", "Times New Roman", Times, serif;
   }
 
-  .cta-seal {
+  .cta-abs { position: absolute; }
+  .cta-text {
+    position: absolute;
+    left: 0;
     width: 100%;
-    max-width: 460px;
-    height: auto;
-    display: block;
-  }
-
-  .cta-intro {
-    margin-top: 30px;
     text-align: center;
-    font-size: 17px;
-    line-height: 1.55;
+    white-space: nowrap;
   }
+  .cta-img { position: absolute; display: block; object-fit: contain; }
+  .cta-line { position: absolute; height: 0; border-top: 0.75pt solid #000000; }
 
-  .cta-recipient-line {
-    margin-top: 32px;
-    width: 100%;
-    max-width: 600px;
-    border-bottom: 1.5px solid #1a1a1a;
-    padding-bottom: 8px;
+  .cta-seal  { left: 17.3pt;  top: 44.4pt;  width: 436.5pt; height: 302.6pt; }
+
+  .cta-t1 { top: 361.0pt; font-size: 15.12pt; line-height: 19.9pt; }
+  .cta-t2 { top: 380.0pt; font-size: 18pt;    line-height: 23.7pt; }
+  .cta-t3 { top: 400.9pt; font-size: 15.12pt; line-height: 19.8pt; }
+
+  .cta-name {
+    position: absolute;
+    left: 92.9pt;
+    width: 288.5pt;
+    top: 432pt;
+    height: 24pt;
+    line-height: 24pt;
     text-align: center;
-    font-size: 24px;
-    font-weight: 600;
-    min-height: 32px;
-  }
-
-  .cta-section-label {
-    margin-top: 34px;
-    text-align: center;
-    font-size: 15px;
-  }
-
-  .cta-dates-grid {
-    margin-top: 20px;
-    width: 100%;
-    max-width: 560px;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 26px 44px;
-  }
-
-  .cta-dates-grid div {
-    border-bottom: 1px solid #1a1a1a;
-    height: 4px;
-  }
-
-  .cta-code-box {
-    margin-top: 16px;
-    border: 1px solid #8b8b8b;
-    padding: 14px 30px;
-    min-width: 260px;
-    text-align: center;
-    font-size: 20px;
+    white-space: nowrap;
+    overflow: hidden;
+    font-size: 18pt;
     font-weight: 700;
-    letter-spacing: 1px;
   }
+  .cta-name-line { left: 92.9pt; width: 288.5pt; top: 457.6pt; }
 
-  .cta-footer-logos {
-    margin-top: auto;
-    padding-top: 50px;
-    width: 100%;
+  .cta-t4 { top: 485.1pt; font-size: 12pt; line-height: 15.8pt; }
+  .cta-date-1 { left: 92.9pt;  width: 136.6pt; top: 526.4pt; }
+  .cta-date-2 { left: 247pt;   width: 134.4pt; top: 526.4pt; }
+  .cta-date-3 { left: 92.9pt;  width: 136.6pt; top: 557.4pt; }
+  .cta-date-4 { left: 247pt;   width: 134.4pt; top: 557.4pt; }
+
+  .cta-t5 { top: 574.7pt; font-size: 12pt; line-height: 15.8pt; }
+  .cta-code-box {
+    position: absolute;
+    left: 154.8pt;
+    top: 597.6pt;
+    width: 165.6pt;
+    height: 28.3pt;
+    border: 0.3pt solid #000000;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
+    font-size: 14pt;
+    font-weight: 700;
+    letter-spacing: 1pt;
+    white-space: nowrap;
   }
+  .cta-t6 { top: 630.4pt; font-size: 12pt; line-height: 15.7pt; }
 
-  .cta-footer-logos img {
-    height: 44px;
-    width: auto;
-    max-width: 220px;
-    object-fit: contain;
-  }
+  .cta-logo-tt      { left: 29.5pt;  top: 665.3pt; width: 176.4pt; height: 42pt; }
+  .cta-logo-cantors { left: 272.6pt; top: 664.8pt; width: 172.8pt; height: 43.4pt; }
 </style>
 </head>
 <body>
-  <div class="cta-certificate">
-    <img class="cta-seal" src="{{sealImageUrl}}" alt="Chant Torah America" />
+  <div class="cta-page">
+    <img class="cta-img cta-seal" src="{{sealImageUrl}}" alt="Chant Torah America" />
 
-    <div class="cta-intro">
-      In honor of your Simcha,<br />
-      a One-Year Subscription to TropeTrainer<br />
-      is presented to:
-    </div>
+    <div class="cta-text cta-t1">In honor of your Simcha,</div>
+    <div class="cta-text cta-t2">a One-Year Subscription to TropeTrainer</div>
+    <div class="cta-text cta-t3">is presented to:</div>
 
-    <div class="cta-recipient-line">{{recipientName}}</div>
+    <div class="cta-name" id="cta-name">{{{recipientName}}}</div>
+    <div class="cta-line cta-name-line"></div>
 
-    <div class="cta-section-label">You are scheduled to Chant Torah on the following dates:</div>
-    <div class="cta-dates-grid">
-      <div></div>
-      <div></div>
-      <div></div>
-      <div></div>
-    </div>
+    <div class="cta-text cta-t4">You are scheduled to chant Torah on the following dates:</div>
+    <div class="cta-line cta-date-1"></div>
+    <div class="cta-line cta-date-2"></div>
+    <div class="cta-line cta-date-3"></div>
+    <div class="cta-line cta-date-4"></div>
 
-    <div class="cta-section-label">Go to tropetrainer.com/activate to get started:</div>
-    <div class="cta-code-box">{{activationCode}}</div>
+    <div class="cta-text cta-t5">Insert the code below upon subscribing:</div>
+    <div class="cta-code-box">{{{activationCode}}}</div>
+    <div class="cta-text cta-t6">Go to <b>tropetrainer.com/activate</b> to get started</div>
 
-    <div class="cta-footer-logos">
-      <img src="{{tropetrainerLogoUrl}}" alt="TropeTrainer" />
-      <img src="{{cantorsLogoUrl}}" alt="Cantors Assembly" />
-    </div>
+    <img class="cta-img cta-logo-tt" src="{{tropetrainerLogoUrl}}" alt="TropeTrainer" />
+    <img class="cta-img cta-logo-cantors" src="{{cantorsLogoUrl}}" alt="Cantors Assembly" />
   </div>
+  <script>
+    // Shrink long recipient names so they always fit on the line.
+    (function () {
+      function fit() {
+        var el = document.getElementById("cta-name");
+        if (!el) return;
+        var size = 18;
+        el.style.fontSize = size + "pt";
+        while (el.scrollWidth > el.clientWidth && size > 9) {
+          size -= 0.5;
+          el.style.fontSize = size + "pt";
+        }
+      }
+      fit();
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+    })();
+  </script>
 </body>
 </html>`;

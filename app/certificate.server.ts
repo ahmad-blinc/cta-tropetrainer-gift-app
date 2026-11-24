@@ -122,7 +122,6 @@ export type CertificateData = {
   giverName: string;
   activationCode: string;
   shopName: string;
-  shopLogoUrl: string | null;
   formattedDate: string;
   initial: string;
   sealImageUrl: string;
@@ -144,7 +143,6 @@ export const SAMPLE_CERTIFICATE_DATA: CertificateData = {
   giverName: "The Cohen Family",
   activationCode: "7K3M-R9PD-X2QH",
   shopName: "Chant Torah America",
-  shopLogoUrl: null,
   formattedDate: "January 1, 2026",
   initial: "C",
   sealImageUrl: getDefaultAssetUrl("seal"),
@@ -161,7 +159,6 @@ export const CERTIFICATE_VARIABLES: { key: keyof CertificateData; description: s
   { key: "cantorsLogoUrl", description: "The Cantors Assembly partnership badge image (set under Brand assets)" },
   { key: "giverName", description: "The gift giver's name" },
   { key: "shopName", description: "The store's name" },
-  { key: "shopLogoUrl", description: "The store's logo URL, if one is set (use with #shopLogoUrl / ^shopLogoUrl sections)" },
   { key: "formattedDate", description: "The order date, formatted (e.g. January 1, 2026)" },
   { key: "initial", description: "The store name's first letter, uppercased" },
   { key: "rulesImageUrl", description: "The name line, date lines and code box artwork from the certificate design" },
@@ -252,26 +249,6 @@ export async function generateCertificatePdf(
 
   const shopName: string = orderJson.data?.shop?.name ?? shop;
 
-  // Shop logo is a "nice to have" — fetched separately so a schema mismatch or
-  // missing brand asset can never break certificate generation.
-  let shopLogoUrl: string | null = null;
-  try {
-    const brandResp = await admin.graphql(
-      `#graphql
-      query CertificateShopBrand {
-        shop {
-          brand {
-            logo { image { url } }
-          }
-        }
-      }`,
-    );
-    const brandJson = await brandResp.json();
-    shopLogoUrl = brandJson.data?.shop?.brand?.logo?.image?.url ?? null;
-  } catch {
-    shopLogoUrl = null;
-  }
-
   const attrs: { key: string; value: string }[] = order.lineItems.edges.flatMap(
     (e: { node: { customAttributes: { key: string; value: string }[] } }) => e.node.customAttributes,
   );
@@ -293,7 +270,6 @@ export async function generateCertificatePdf(
     giverName: escapeHtml(giverName) || "Gift Giver",
     activationCode: escapeHtml(activationCode) || "TT-XXXX-XXXX",
     shopName: escapeHtml(shopName),
-    shopLogoUrl,
     formattedDate,
     initial: shopName.slice(0, 1).toUpperCase(),
     sealImageUrl: assetUrls.seal,

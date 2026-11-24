@@ -16,9 +16,14 @@ const DEFAULT_ASSET_FILENAMES: Record<CertificateAssetKey, string> = {
   cantorsLogo: "cantors-logo-default.png",
 };
 
+// Static files under /public are served with a 1-year immutable cache, so
+// browsers keep showing an old image for the same URL. Bump this whenever a
+// file in public/certificate-assets changes, so every URL changes with it.
+export const CERTIFICATE_ASSET_VERSION = "2026-11-24";
+
 export function getDefaultAssetUrl(key: CertificateAssetKey): string {
   const base = (process.env.SHOPIFY_APP_URL || "").replace(/\/$/, "");
-  return `${base}/certificate-assets/${DEFAULT_ASSET_FILENAMES[key]}`;
+  return `${base}/certificate-assets/${DEFAULT_ASSET_FILENAMES[key]}?v=${CERTIFICATE_ASSET_VERSION}`;
 }
 
 export type CertificateAssetUrls = Record<CertificateAssetKey, string>;

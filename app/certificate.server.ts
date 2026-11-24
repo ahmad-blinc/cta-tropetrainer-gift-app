@@ -4,7 +4,11 @@ import puppeteer from "puppeteer";
 import { unauthenticated } from "./shopify.server";
 import db from "./db.server";
 import type { AdminClient } from "./gift-order.server";
-import { getCertificateAssetUrls, getDefaultAssetUrl } from "./certificate-assets.server";
+import {
+  CERTIFICATE_ASSET_VERSION,
+  getCertificateAssetUrls,
+  getDefaultAssetUrl,
+} from "./certificate-assets.server";
 
 export const CERTIFICATE_METAFIELD_NAMESPACE = "custom";
 export const CERTIFICATE_METAFIELD_KEY = "certificate_url";
@@ -132,7 +136,7 @@ export type CertificateData = {
 // their design in every viewer and on paper. Not a merchant brand asset.
 function getRulesImageUrl(): string {
   const base = (process.env.SHOPIFY_APP_URL || "").replace(/\/$/, "");
-  return `${base}/certificate-assets/rules-default.png`;
+  return `${base}/certificate-assets/rules-default.png?v=${CERTIFICATE_ASSET_VERSION}`;
 }
 
 export const SAMPLE_CERTIFICATE_DATA: CertificateData = {

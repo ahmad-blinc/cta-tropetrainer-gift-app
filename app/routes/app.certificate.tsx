@@ -355,7 +355,9 @@ export default function CertificateDesign() {
               <Button size="slim" onClick={() => setEditorFullWidth((w) => !w)}>
                 {editorFullWidth ? "Standard width" : "Full width editor"}
               </Button>
-              <Button onClick={handleReset} disabled={isSaving}>
+              {/* Nothing to reset when the default design is active and there are
+                  no unsaved edits — same rule as the Code Lookup page. */}
+              <Button onClick={handleReset} disabled={isSaving || (!isCustom && !isDirty)}>
                 Reset to default
               </Button>
               <Button

@@ -219,10 +219,27 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 const PANEL_HEIGHT = "68vh";
-// Letter page at 96dpi — matches the dimensions generateCertificatePdf renders with
-// Puppeteer (`page.pdf({ format: "Letter" })`), so the preview matches the real PDF.
-const PAGE_WIDTH = 816;
-const PAGE_HEIGHT = 1056;
+// The preview uses the same page size the PDF is generated at: the template's
+// own `@page { size: ... }` (honored via preferCSSPageSize in
+// generateCertificatePdf), falling back to Letter at 96dpi when it has none.
+const LETTER_PAGE = { width: 816, height: 1056 };
+const UNIT_TO_PX: Record<string, number> = {
+  px: 1,
+  pt: 96 / 72,
+  in: 96,
+  cm: 96 / 2.54,
+  mm: 96 / 25.4,
+};
+
+function getTemplatePageSize(html: string): { width: number; height: number } {
+  const match = html.match(
+    /@page\s*\{[^}]*?size\s*:\s*([\d.]+)\s*(px|pt|in|cm|mm)\s+([\d.]+)\s*(px|pt|in|cm|mm)/i,
+  );
+  if (!match) return LETTER_PAGE;
+  const width = parseFloat(match[1]) * UNIT_TO_PX[match[2].toLowerCase()];
+  const height = parseFloat(match[3]) * UNIT_TO_PX[match[4].toLowerCase()];
+  return width > 0 && height > 0 ? { width, height } : LETTER_PAGE;
+}
 
 export default function CertificateDesign() {
   const {
@@ -1130,6 +1147,10 @@ function CertificatePagePreview({ html }: { html: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [fitScale, setFitScale] = useState(1);
   const [zoomOverride, setZoomOverride] = useState<number | null>(null);
+  const { width: PAGE_WIDTH, height: PAGE_HEIGHT } = useMemo(
+    () => getTemplatePageSize(html),
+    [html],
+  );
 
   useEffect(() => {
     const el = containerRef.current;
@@ -1143,7 +1164,7 @@ function CertificatePagePreview({ html }: { html: string }) {
     const observer = new ResizeObserver(update);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [PAGE_WIDTH, PAGE_HEIGHT]);
 
   const scale = zoomOverride ?? fitScale;
   const isFit = zoomOverride === null;
@@ -1158,7 +1179,7 @@ function CertificatePagePreview({ html }: { html: string }) {
       <Box padding="200" background="bg-surface-secondary">
         <InlineStack align="space-between" blockAlign="center" gap="200">
           <Text as="span" variant="bodySm" tone="subdued">
-            Sample data — not a real order. Shown at the same Letter page size the PDF is
+            Sample data — not a real order. Shown at the same page size the PDF is
             generated at.
           </Text>
           <InlineStack gap="150" blockAlign="center">
